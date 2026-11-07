@@ -1,0 +1,15 @@
+# BoT-SORT for a forward-moving dashcam sampled at ~5 fps.
+# Global motion compensation (sparse optical flow) separates the car's own motion from the defect's,
+# which keeps one ID per defect as it slides down the frame.
+tracker_type: botsort
+track_high_thresh: 0.25
+track_low_thresh: 0.1
+new_track_thresh: 0.25
+track_buffer: 10          # frames a lost track survives: 2 s at 5 fps
+match_thresh: 0.8
+fuse_score: True
+gmc_method: sparseOptFlow
+proximity_thresh: 0.5
+appearance_thresh: 0.8
+with_reid: False
+model: auto
