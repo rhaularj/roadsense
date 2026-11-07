@@ -1,0 +1,18 @@
+[project]
+name = "roadsense"
+version = "0.1.0"
+description = "Agentic AI road-damage reporting: dashcam video -> edge detector -> MCP agents -> municipal 311"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "tests"]
+addopts = "-p no:cacheprovider"
+
+[tool.ruff]
+line-length = 130
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E731", "B008", "B905"]  # zip over pairwise slices is intentional

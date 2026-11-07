@@ -1,0 +1,24 @@
+# Detection (install the CUDA build of torch for your GPU first, see README)
+torch>=2.1
+torchvision>=0.16
+ultralytics>=8.3
+lap>=0.5
+opencv-python
+pillow>=13.0.0
+numpy
+
+# Agents and services
+openai>=1.40
+mcp>=1.20,<2
+fastapi
+uvicorn
+httpx
+pydantic>=2
+python-dotenv
+gpxpy
+
+# Web app: FastAPI serves the single-page app (no front-end build step; Leaflet is vendored)
+python-multipart
+
+# Tests
+pytest
