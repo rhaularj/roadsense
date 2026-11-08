@@ -1,0 +1,18 @@
+{
+  "Halifax Regional Municipality": {
+    "aliases": ["Halifax", "Dartmouth", "Bedford", "Sackville", "Cole Harbour", "Halifax County"],
+    "channel": "open311",
+    "open311_url": "${ROADSENSE_OPEN311_URL}",
+    "service_code": "POTHOLE",
+    "crack_service_code": "ROAD_SURFACE",
+    "jurisdiction_id": "halifax.ca",
+    "contact": "311 (phone), contactus@311.halifax.ca",
+    "notes": "HRM has no public Open311 API; the demo files to a local mock GeoReport v2 server."
+  },
+  "Nova Scotia Public Works": {
+    "aliases": ["NS Public Works", "Nova Scotia Department of Public Works", "Province of Nova Scotia"],
+    "channel": "referral",
+    "contact": "Operations Contact Centre 1-844-696-7737, dpw-occ@novascotia.ca, or 511",
+    "notes": "Provincial roads and 100-series highways. No public API: RoadSense prepares a referral package."
+  }
+}
