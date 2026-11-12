@@ -1,24 +1,45 @@
-"""Road-authority directory, the exact payload a report becomes, and the channels that deliver it.
+"""Road-authority directory and the exact payload a report becomes.
 
-The payload is built deterministically from the database, so the driver approves exactly what will be sent: the
-approval stores its hash, and submission refuses if the payload changed after approval.
+The payload is built deterministically from the database, so the reviewer approves exactly what will be sent: the
+approval stores the payload and its hash, and delivery sends that stored snapshot (see core.delivery).
+
+The directory is configuration, not code: authorities, aliases, channels, service codes and the regional rules
+(provincial routes, Priority 1 width, severity bands, repair targets) live in a JSON file. The built-in file covers
+the Halifax pilot; ROADSENSE_AUTHORITIES_FILE points at another region's file.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+from functools import lru_cache
 from pathlib import Path
 
-import httpx
-
-from ..common.config import settings
+from ..common.config import PROJECT_ROOT, settings
+from . import media
 
 DIRECTORY = Path(__file__).with_name("municipalities.json")
 
 
-def directory() -> dict:
-    text = DIRECTORY.read_text(encoding="utf-8").replace("${ROADSENSE_OPEN311_URL}", settings.open311_url)
+@lru_cache(maxsize=4)
+def _load(path: str, open311_url: str) -> dict:
+    text = Path(path).read_text(encoding="utf-8").replace("${ROADSENSE_OPEN311_URL}", open311_url)
     return json.loads(text)
+
+
+def _file() -> str:
+    if settings.authorities_file:
+        p = Path(settings.authorities_file)
+        return str(p if p.is_absolute() else PROJECT_ROOT / p)
+    return str(DIRECTORY)
+
+
+def directory() -> dict:
+    """Authorities by name (rules and other reserved keys starting with '_' left out)."""
+    return {k: v for k, v in _load(_file(), settings.open311_url).items() if not k.startswith("_")}
+
+
+def rules() -> dict:
+    return _load(_file(), settings.open311_url).get("_rules", {})
 
 
 def service_info(authority: str | None) -> dict | None:
@@ -47,47 +68,31 @@ def build_payload(report: dict) -> dict:
     info = service_info(report.get("jurisdiction")) or {}
     code = info.get("service_code", "POTHOLE") if report["class_code"] == "D40" else \
         info.get("crack_service_code", info.get("service_code", "ROAD_SURFACE"))
+    attributes = {"severity": report["severity"], "confirmations": report["confirmations"],
+                  "p1_candidate": bool(report.get("p1_candidate")), "source": "RoadSense"}
+    if report.get("severity_band"):
+        attributes["severity_band"] = report["severity_band"]
+    if report.get("repair_target_days"):
+        attributes["repair_target_days"] = report["repair_target_days"]
     return {"authority": info.get("authority", report.get("jurisdiction")), "channel": info.get("channel", "none"),
             "service_code": code, "lat": round(report["lat"], 6), "long": round(report["lon"], 6),
             "address_string": report.get("address") or "",
             "description": report.get("draft_description") or default_description(report),
-            "media_url": f"{settings.agent_api_url}/media/{report['best_event_id']}.jpg",
-            "attributes": {"severity": report["severity"], "confirmations": report["confirmations"],
-                           "p1_candidate": bool(report.get("p1_candidate")), "source": "RoadSense"}}
+            "media_url": media.signed_url(report["best_event_id"], report.get("created_at")),
+            "attributes": attributes}
 
 
 def payload_hash(payload: dict) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
-def submit(payload: dict) -> dict:
-    """Deliver an approved payload. Open311 authorities get a GeoReport v2 request; the others a referral package."""
-    info = service_info(payload["authority"])
-    if info is None:
-        raise ValueError(f"no delivery channel for {payload['authority']!r}")
-    if info["channel"] == "open311":
-        data = {"api_key": settings.open311_api_key, **{k: payload[k] for k in
-                ("service_code", "lat", "long", "description", "address_string", "media_url")}}
-        for k, v in payload["attributes"].items():
-            data[f"attribute[{k}]"] = str(v)
-        r = httpx.post(f"{info['open311_url']}/requests.json", data=data, timeout=15)
-        r.raise_for_status()
-        ack = r.json()[0]
-        return {"channel": "open311", "service_request_id": ack["service_request_id"],
-                "notice": ack.get("service_notice")}
-    folder = settings.data_dir / "referrals"
-    folder.mkdir(parents=True, exist_ok=True)
-    ref_id = f"REF-{payload_hash(payload)[:10]}"
-    (folder / f"{ref_id}.json").write_text(json.dumps({"to": info["authority"], "contact": info.get("contact"),
-                                                       **payload}, indent=2), encoding="utf-8")
-    return {"channel": "referral", "service_request_id": ref_id,
-            "notice": f"Referral package prepared for {info['authority']} ({info.get('contact')})."}
+def submit(payload: dict, report: dict | None = None) -> dict:
+    from . import delivery  # late import: delivery imports this module
+
+    return delivery.submit(payload, report)
 
 
-def request_status(authority: str, service_request_id: str) -> dict:
-    info = service_info(authority)
-    if not info or info["channel"] != "open311":
-        return {"status": "unknown", "status_notes": "referral channel has no status feed"}
-    r = httpx.get(f"{info['open311_url']}/requests/{service_request_id}.json", timeout=15)
-    r.raise_for_status()
-    return r.json()[0]
+def request_status(authority: str, service_request_id: str, channel: str | None = None) -> dict:
+    from . import delivery
+
+    return delivery.status(authority, service_request_id, channel)

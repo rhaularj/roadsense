@@ -92,8 +92,10 @@ def severity(event_id: str) -> dict:
     with session() as conn:
         event = _event(conn, event_id)
     conf = event["verified_confidence"] or event["recheck_confidence"] or event["confidence"]
-    return {"event_id": event_id, **reports.estimate_severity(event["class_code"], event["box_area_ratio"], conf,
-                                                               event["frames_seen"], event["width_m"])}
+    sev = reports.estimate_severity(event["class_code"], event["box_area_ratio"], conf, event["frames_seen"],
+                                    event["width_m"], event.get("jolt_g"))
+    sev.pop("band", None)  # the band is applied by reports_create_or_merge; the agent reasons on the level
+    return {"event_id": event_id, **sev}
 
 
 @mcp.tool(name="detector_record_verdict", annotations=WRITE)

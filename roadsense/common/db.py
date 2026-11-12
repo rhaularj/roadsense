@@ -67,6 +67,64 @@ CREATE TABLE IF NOT EXISTS geocache (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL UNIQUE,
+    name TEXT,
+    role TEXT NOT NULL,
+    password_hash TEXT,
+    oidc_subject TEXT UNIQUE,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    last_login TEXT
+);
+CREATE TABLE IF NOT EXISTS jobs (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    args TEXT NOT NULL,
+    status TEXT NOT NULL,
+    actor TEXT,
+    result TEXT,
+    error TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    created TEXT NOT NULL,
+    started TEXT,
+    finished TEXT
+);
+CREATE INDEX IF NOT EXISTS jobs_status ON jobs (status, created);
+CREATE TABLE IF NOT EXISTS deliveries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    report_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    channel TEXT,
+    ok INTEGER NOT NULL,
+    detail TEXT,
+    ts TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS external_requests (
+    id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    kind TEXT,
+    status TEXT,
+    lat REAL NOT NULL,
+    lon REAL NOT NULL,
+    description TEXT,
+    reported_at TEXT,
+    closed_at TEXT,
+    report_id INTEGER,
+    raw TEXT,
+    synced_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS external_pos ON external_requests (lat, lon);
+CREATE TABLE IF NOT EXISTS labels (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id TEXT NOT NULL,
+    report_id INTEGER,
+    label TEXT NOT NULL,
+    class_code TEXT,
+    actor TEXT NOT NULL,
+    ts TEXT NOT NULL
+);
 CREATE TRIGGER IF NOT EXISTS audit_no_update BEFORE UPDATE ON audit
 BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS audit_no_delete BEFORE DELETE ON audit
@@ -77,13 +135,21 @@ BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
 MIGRATIONS = {
     "events": {"car_lat": "REAL", "car_lon": "REAL", "distance_m": "REAL", "width_m": "REAL",
                "position_uncertainty_m": "REAL", "verifier_class": "TEXT", "recheck_confidence": "REAL",
-               "class_disputed": "INTEGER NOT NULL DEFAULT 0", "rationale": "TEXT", "snap_m": "REAL"},
+               "class_disputed": "INTEGER NOT NULL DEFAULT 0", "rationale": "TEXT", "snap_m": "REAL",
+               "jolt_g": "REAL", "server_redacted": "INTEGER NOT NULL DEFAULT 0", "suppressed_by": "INTEGER",
+               "road_class": "TEXT", "road_name": "TEXT"},
     "reports": {"jurisdiction": "TEXT", "channel": "TEXT", "width_m": "REAL", "p1_candidate": "INTEGER DEFAULT 0",
                 "class_disputed": "INTEGER NOT NULL DEFAULT 0", "rationale": "TEXT", "draft_description": "TEXT",
-                "approved_payload_hash": "TEXT", "submitted_payload_hash": "TEXT"},
+                "approved_payload_hash": "TEXT", "submitted_payload_hash": "TEXT",
+                # the exact payload the reviewer approved: delivery sends this snapshot, never a rebuilt one
+                "approved_payload": "TEXT", "approved_by": "TEXT", "approved_at": "TEXT", "rejected_by": "TEXT",
+                "delivery_attempts": "INTEGER NOT NULL DEFAULT 0", "last_error": "TEXT", "next_attempt_at": "TEXT",
+                "external_ref": "TEXT", "corroborations": "INTEGER NOT NULL DEFAULT 0",
+                "severity_band": "TEXT", "repair_target_days": "INTEGER", "road_class": "TEXT", "road_name": "TEXT",
+                "pending_update": "INTEGER NOT NULL DEFAULT 0"},
 }
 
-REPORT_STATUSES = ("pending_approval", "approved", "rejected", "submitted", "fixed")
+REPORT_STATUSES = ("pending_approval", "approved", "rejected", "submitted", "fixed", "delivery_failed")
 EVENT_STATUSES = ("received", "checked", "verified", "rejected", "processed")
 
 

@@ -14,6 +14,7 @@ import hashlib
 import json
 import re
 import time
+from urllib.parse import urlparse
 
 import httpx
 from openai import APIError, APIStatusError, APITimeoutError, AsyncOpenAI, RateLimitError
@@ -23,8 +24,11 @@ from ..common.config import settings
 from ..common.db import session
 
 CACHE_SCHEMA = "CREATE TABLE IF NOT EXISTS llm_cache (key TEXT PRIMARY KEY, model TEXT, message TEXT, usage TEXT)"
-# timestamps and random ids change between runs but not the meaning of a prompt; drop them from the cache key
-_VOLATILE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(\+00:00|Z)?|call_[A-Za-z0-9]+|\"id\": ?\"[^\"]*\"")
+# timestamps and tool-call ids change between runs but not the meaning of a prompt; drop them from the cache key.
+# Event and report ids stay in the key: two similar trips must never share one cached answer about the wrong events.
+_VOLATILE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(\+00:00|Z)?|call_[A-Za-z0-9]+")
+# the recorded keyless demo (demo/llm_cache.json) was keyed without ids; replay mode may still read those entries
+_VOLATILE_LEGACY = re.compile(_VOLATILE.pattern + r"|\"id\": ?\"[^\"]*\"")
 
 
 class LLMUnavailable(RuntimeError):
@@ -48,9 +52,22 @@ class _Bucket:
 _bucket = _Bucket(settings.llm_rpm)
 
 
-def cache_key(models: list[str], messages: list[dict], tools: list[dict] | None) -> str:
+def cache_key(models: list[str], messages: list[dict], tools: list[dict] | None, legacy: bool = False) -> str:
     text = json.dumps([models, messages, tools or []], sort_keys=True, default=str)
-    return hashlib.sha256(_VOLATILE.sub("~", text).encode()).hexdigest()
+    return hashlib.sha256((_VOLATILE_LEGACY if legacy else _VOLATILE).sub("~", text).encode()).hexdigest()
+
+
+def check_residency(base_url: str, models: list[str]) -> None:
+    """With ROADSENSE_DATA_RESIDENCY=ca, prompts may only go to allow-listed (Canadian, no-retention) endpoints, and
+    never to free models, whose providers may log prompts."""
+    if settings.data_residency != "ca":
+        return
+    host = urlparse(base_url).hostname or ""
+    if host not in settings.residency_llm_hosts:
+        raise LLMUnavailable(f"data residency: LLM host {host!r} is not in ROADSENSE_RESIDENCY_LLM_HOSTS")
+    free = [m for m in models if m.endswith(":free")]
+    if free:
+        raise LLMUnavailable(f"data residency: free models may log prompts and are not allowed ({', '.join(free)})")
 
 
 class LLM:
@@ -62,6 +79,8 @@ class LLM:
                                   timeout=90, max_retries=0,
                                   default_headers={"HTTP-Referer": "https://roadsense.local", "X-Title": "RoadSense"})
         self.models = models or settings.llm_models
+        if self.mode != "replay":
+            check_residency(settings.openrouter_base_url, self.models)
         self.max_calls, self.calls, self.cache_hits = max_calls, 0, 0
         self.prompt_tokens = self.completion_tokens = 0
         self.last_model: str | None = None
@@ -83,7 +102,8 @@ class LLM:
         self.calls += 1
         key = cache_key(self.models, messages, tools)
         if self.mode in ("cache", "replay"):
-            hit = self._cached(key)
+            hit = self._cached(key) or (self._cached(cache_key(self.models, messages, tools, legacy=True))
+                                        if self.mode == "replay" else None)
             if hit:
                 self.cache_hits += 1
                 self.last_model = f"{hit['model']} (cached)"
