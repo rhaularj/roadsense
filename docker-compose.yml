@@ -1,0 +1,21 @@
+# docker compose up --build   → dashboard http://localhost:7860, agent API http://localhost:8000/docs,
+#                                mock Halifax 311 inbox http://localhost:8311
+# Put yolov8m_rdd2022.pt and rtdetr_l_rdd2022.pt in ./weights first. Without an OpenRouter key the agents run in
+# replay mode (cached LLM responses) or fall back to the deterministic pipeline.
+services:
+  roadsense:
+    build: .
+    env_file: .env
+    environment:
+      ROADSENSE_WEIGHTS_DIR: /app/weights
+      ROADSENSE_DATA_DIR: /app/data
+      ROADSENSE_DEVICE: cpu
+    ports:
+      - "7860:7860"
+      - "8000:8000"
+      - "8311:8311"
+    volumes:
+      - ./weights:/app/weights:ro
+      - roadsense-data:/app/data
+volumes:
+  roadsense-data:

@@ -1,0 +1,25 @@
+{
+  "rule": {
+    "a": 0.5,
+    "b": 0.4,
+    "c": 0.1
+  },
+  "val": {
+    "detections_before": 451,
+    "detections_after": 421,
+    "precision_before": 0.767,
+    "precision_after": 0.786,
+    "precision_class_aware_after": 0.758,
+    "false_alarms_removed": 15,
+    "false_alarms_total": 105,
+    "false_alarm_reduction": 0.143,
+    "true_damage_kept_share": 0.957,
+    "edge_recall_of_labels": 0.638,
+    "disputed_share_of_kept": 0.135
+  },
+  "min_true_damage_kept": 0.95,
+  "split": "val",
+  "images": 350,
+  "edge_ms_per_image": 50.9,
+  "verify_ms_per_detection": 155.1
+}

@@ -1,0 +1,25 @@
+{
+  "split": "test",
+  "images": 350,
+  "labelled_boxes": 568,
+  "edge_model": "YOLOv8m",
+  "verifier": "RT-DETR-L",
+  "rule": {
+    "a": 0.5,
+    "b": 0.4,
+    "c": 0.1
+  },
+  "detections_before": 510,
+  "detections_after": 450,
+  "precision_before": 0.714,
+  "precision_after": 0.744,
+  "precision_class_aware_after": 0.722,
+  "false_alarms_removed": 31,
+  "false_alarms_total": 146,
+  "false_alarm_reduction": 0.212,
+  "true_damage_kept_share": 0.92,
+  "edge_recall_of_labels": 0.641,
+  "disputed_share_of_kept": 0.12,
+  "edge_ms_per_image": 51.6,
+  "verify_ms_per_detection": 154.1
+}

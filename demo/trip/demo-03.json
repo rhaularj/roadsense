@@ -1,0 +1,20 @@
+{
+  "id": "demo-03",
+  "trip_id": "demo-halifax",
+  "track_id": 3,
+  "class_code": "D10",
+  "class_name": "Transverse crack",
+  "confidence": 0.6082,
+  "frames_seen": 4,
+  "box": [
+    211,
+    447,
+    599,
+    517
+  ],
+  "box_area_ratio": 0.07544,
+  "lat": 44.679995,
+  "lon": -63.67972,
+  "heading": 90.0,
+  "captured_at": "2026-11-03T14:00:00Z"
+}

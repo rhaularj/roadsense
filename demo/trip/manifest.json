@@ -1,0 +1,32 @@
+[
+  {
+    "id": "demo-01",
+    "scenario": "Halifax street",
+    "source_image": "China_Drone_001626.jpg"
+  },
+  {
+    "id": "demo-02",
+    "scenario": "Halifax street",
+    "source_image": "United_States_002733.jpg"
+  },
+  {
+    "id": "demo-03",
+    "scenario": "Highway 102 (provincial)",
+    "source_image": "Japan_008319.jpg"
+  },
+  {
+    "id": "demo-04",
+    "scenario": "Bedford Highway (numbered route)",
+    "source_image": "Japan_011923.jpg"
+  },
+  {
+    "id": "demo-05",
+    "scenario": "detection overlapping no labelled damage",
+    "source_image": "Japan_010033.jpg"
+  },
+  {
+    "id": "demo-06",
+    "scenario": "second driver, same defect as demo-01",
+    "source_image": "China_Drone_001626.jpg"
+  }
+]

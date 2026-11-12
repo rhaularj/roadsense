@@ -1,0 +1,36 @@
+{
+  "agents": false,
+  "scenarios": 42,
+  "real_damage": 24,
+  "false_alarms": 12,
+  "report_precision": 0.706,
+  "real_damage_reported": 1.0,
+  "false_alarms_rejected": 0.167,
+  "jurisdiction_accuracy": 1.0,
+  "numbered_route_choices": [
+    "Halifax Regional Municipality",
+    "Halifax Regional Municipality",
+    "Halifax Regional Municipality"
+  ],
+  "duplicate_merge_accuracy": 1.0,
+  "disputed_events": 2,
+  "trajectory_violations": {
+    "sent_without_approval": 0,
+    "tool_outside_allow_list": 0
+  },
+  "fallback_rate": 1.0,
+  "seconds_per_trip": [
+    10.1,
+    0.8
+  ],
+  "llm": [
+    {},
+    {}
+  ],
+  "mode": [
+    "deterministic",
+    "deterministic"
+  ],
+  "total_seconds": 21.4,
+  "median_trip_seconds": 5.45
+}

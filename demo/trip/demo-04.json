@@ -1,0 +1,20 @@
+{
+  "id": "demo-04",
+  "trip_id": "demo-halifax",
+  "track_id": 4,
+  "class_code": "D20",
+  "class_name": "Alligator crack",
+  "confidence": 0.5431,
+  "frames_seen": 4,
+  "box": [
+    171,
+    340,
+    596,
+    461
+  ],
+  "box_area_ratio": 0.14285,
+  "lat": 44.68034,
+  "lon": -63.645425,
+  "heading": 90.0,
+  "captured_at": "2026-11-03T14:00:00Z"
+}

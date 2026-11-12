@@ -1,0 +1,20 @@
+{
+  "id": "demo-02",
+  "trip_id": "demo-halifax",
+  "track_id": 2,
+  "class_code": "D00",
+  "class_name": "Longitudinal crack",
+  "confidence": 0.863,
+  "frames_seen": 4,
+  "box": [
+    348,
+    489,
+    456,
+    620
+  ],
+  "box_area_ratio": 0.03454,
+  "lat": 44.64463,
+  "lon": -63.573637,
+  "heading": 90.0,
+  "captured_at": "2026-11-03T14:00:00Z"
+}
