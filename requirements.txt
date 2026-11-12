@@ -17,8 +17,12 @@ pydantic>=2
 python-dotenv
 gpxpy
 
+# Identity: OpenID Connect (Entra ID) token verification
+PyJWT[crypto]>=2.8
+
 # Web app: FastAPI serves the single-page app (no front-end build step; Leaflet is vendored)
 python-multipart
 
-# Tests
+# Tests and lint (pinned versions: requirements.lock)
 pytest
+ruff

@@ -47,6 +47,12 @@ def main():
             url = f"http://127.0.0.1:{port}"
             print(f"{name}: {'ready' if wait(url + path) else 'NOT READY'} at {url}", flush=True)
         print("\nOpen http://127.0.0.1:7860  (Ctrl+C to stop)", flush=True)
+        sys.path.insert(0, str(ROOT))
+        from roadsense.common.config import settings
+
+        first = settings.data_dir / "initial_admin_password.txt"
+        if settings.auth_enabled and first.exists():
+            print(f"First sign-in: the admin email and password are in {first}", flush=True)
         while all(p.poll() is None for p in procs):
             time.sleep(1)
     except KeyboardInterrupt:

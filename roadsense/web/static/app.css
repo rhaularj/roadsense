@@ -475,3 +475,48 @@ details.tool pre { margin: 0; padding: 10px; font-size: 11.5px; white-space: pre
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* ---------- v2.1: sign-in, account menu, condition meter, forms ---------- */
+.login { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: var(--space-4);
+  background: var(--bg-subtle); }
+body.signed-out .app { visibility: hidden; }
+.login-card { width: min(400px, 100%); padding: var(--space-6); display: grid; gap: var(--space-4); box-shadow: var(--shadow-lg); }
+.login-card label, .form-row label { display: grid; gap: 6px; font-size: var(--text-sm); font-weight: 500; color: var(--text-2); }
+.login-card .input { width: 100%; height: 38px; }
+.login-card .btn-lg { width: 100%; justify-content: center; }
+.or { display: flex; align-items: center; gap: 10px; color: var(--faint); font-size: var(--text-xs); }
+.or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.user-wrap { position: relative; }
+.user-chip { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 8px 0 3px; border: 1px solid var(--border);
+  border-radius: var(--radius-full); background: var(--surface); color: var(--text); cursor: pointer; font: inherit; }
+.user-chip:hover { border-color: var(--border-strong); }
+.user-chip:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--primary-ring); }
+.user-chip .avatar { width: 28px; height: 28px; border-radius: var(--radius-full); }
+.user-text { display: grid; line-height: 1.15; text-align: left; }
+.user-name { font-size: var(--text-sm); font-weight: 600; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-role { font-size: var(--text-xs); color: var(--muted); text-transform: capitalize; }
+.user-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 40; min-width: 210px; padding: 8px; display: grid; gap: 2px;
+  box-shadow: var(--shadow-lg); }
+.user-menu .muted { padding: 6px 8px 8px; border-bottom: 1px solid var(--border); margin-bottom: 4px; overflow-wrap: anywhere; }
+.user-menu a, .user-menu button { display: block; width: 100%; text-align: left; padding: 8px; border: 0; border-radius: var(--radius-sm);
+  background: none; color: var(--text); font: inherit; font-size: var(--text-base); cursor: pointer; text-decoration: none; }
+.user-menu a:hover, .user-menu button:hover { background: var(--surface-hover); }
+.user-menu [hidden] { display: none; }
+.reclass { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.input-sm { height: 30px; font-size: var(--text-sm); }
+.form-row { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: end; }
+.form-row label { flex: 1 1 180px; }
+.form-row .input { width: 100%; }
+.meter-row { display: flex; align-items: center; gap: 10px; }
+.meter { flex: 1; height: 8px; border-radius: var(--radius-full); background: var(--surface-sunken); overflow: hidden; }
+.meter span { display: block; height: 100%; border-radius: inherit; background: var(--primary); }
+.meter span.green { background: var(--green); } .meter span.amber { background: var(--amber); } .meter span.red { background: var(--red); }
+.section-tight { margin-bottom: var(--space-4); }
+.warn-list { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 2px; }
+.nav [hidden], [data-perm][hidden] { display: none !important; }
+@media (max-width: 760px) {
+  .user-menu { right: -8px; }
+  .form-row .btn { width: 100%; justify-content: center; }
+}
+/* the hidden attribute always wins over a component's display value (login overlay, account menu, perm-gated nav) */
+[hidden] { display: none !important; }

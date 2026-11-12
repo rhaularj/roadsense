@@ -86,6 +86,11 @@ Themes: light is the default. Dark follows `prefers-color-scheme` unless the use
 | Toast | `toast(msg, ok)` | success, `.err` | show/hide, `aria-live` |
 | Skeleton | `.skeleton` | — | shimmer |
 | Command palette | `#palette` · `palette.open()` | groups: Go to, Actions, Awaiting review | keyboard nav, `aria-activedescendant` |
+| Sign-in | `#login` › `.login-card` (labels wrap inputs, `.or` divider for SSO) | password, SSO | error callout, focus on email |
+| Account menu | `.user-chip` + `.user-menu` (`role="menu"`) | role tone on the avatar | open/close on click, closes on outside click |
+| Meter | `.meter-row` › `.meter` › `span.{green,amber,red}` | by rating | — |
+| Form row | `.form-row` › `label` + `.input`, `.input-sm` | — | stacks on mobile |
+| Permission gate | `[data-perm="admin|review|upload"]` | — | hidden until `/api/me` grants it |
 
 ### Button: do and don't
 
@@ -120,6 +125,7 @@ Themes: light is the default. Dark follows `prefers-color-scheme` unless the use
 
 ## Extending
 
+0. `[hidden]` always wins over a component's `display` (global rule): never give an overlay `display` without it.
 1. Need a colour? Map it to a semantic token. If none fits, add a semantic token to **both** themes, never a raw hex in
    a component. The one exception is Leaflet markers (`MAP_COLORS`), which mirror the status tokens.
 2. Need a component? Build it from existing tokens, add it to the table above with its variants and states, and give

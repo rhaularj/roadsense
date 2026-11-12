@@ -89,7 +89,7 @@ def test_unapproved_reports_cannot_be_sent(db):
     add_event("ev-u", 44.643, -63.58)
     with session() as conn:
         rid = reports.create_or_merge(conn, "ev-u", "high", "x", "Halifax Regional Municipality", 15)["report"]["id"]
-    with pytest.raises(ToolError, match="only driver-approved"):
+    with pytest.raises(ToolError, match="only reviewer-approved"):
         municipality_server.submit_request(rid)
 
 
@@ -98,7 +98,7 @@ def test_payload_is_locked_after_approval(db):
     with session() as conn:  # something changes the description after the driver approved
         conn.execute("UPDATE reports SET draft_description = 'different text that was never approved' WHERE id = ?",
                      (rid,))
-    with pytest.raises(ToolError, match="changed after the driver approved"):
+    with pytest.raises(ToolError, match="changed after the reviewer approved"):
         municipality_server.submit_request(rid)
 
 

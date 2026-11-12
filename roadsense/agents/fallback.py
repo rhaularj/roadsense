@@ -87,7 +87,7 @@ async def file_report(toolbox: Toolbox, report_id: int) -> dict:
 async def follow_up(toolbox: Toolbox) -> dict:
     with session() as conn:
         submitted = [r["id"] for r in conn.execute(
-            "SELECT id FROM reports WHERE status = 'submitted' AND channel = 'open311'")]
+            "SELECT id FROM reports WHERE status = 'submitted' AND channel IN ('open311', 'cityworks', 'arcgis')")]
         fixed_unnotified = [dict(r) for r in conn.execute(
             "SELECT * FROM reports r WHERE status = 'fixed' AND NOT EXISTS "
             "(SELECT 1 FROM notifications n WHERE n.report_id = r.id)")]

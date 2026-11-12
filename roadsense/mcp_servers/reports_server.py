@@ -8,10 +8,19 @@ from mcp.server.fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 from ..common.config import settings
-from ..common.db import REPORT_STATUSES, now, row, session
+from ..common.db import REPORT_STATUSES, audit, now, row, session
 from ..core import geo, open311, reports
 
 mcp = FastMCP("roadsense-reports")
+# What the agents see of a row: a fixed allow-list. Delivery bookkeeping (approved payload, attempts, errors) and
+# privacy-relevant columns never reach the model, and tool results stay stable for the recorded keyless demo.
+INTERNAL = {"image_path", "jolt_g", "server_redacted", "suppressed_by", "road_class", "road_name", "approved_payload",
+            "approved_by", "approved_at", "rejected_by", "delivery_attempts", "last_error", "next_attempt_at",
+            "external_ref", "corroborations", "severity_band", "repair_target_days", "pending_update"}
+
+
+def _for_agent(d: dict) -> dict:
+    return {k: v for k, v in d.items() if k not in INTERNAL}
 READ = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
 WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=False)
 
@@ -30,8 +39,7 @@ def get_event(event_id: str) -> dict:
         event = row(conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone())
     if event is None:
         raise ToolError(f"unknown event {event_id}")
-    event.pop("image_path", None)
-    return event
+    return _for_agent(event)
 
 
 @mcp.tool(name="reports_find_nearby", annotations=READ)
@@ -52,19 +60,39 @@ def create_or_merge(event_id: str, severity: str, jurisdiction: str, rationale: 
     the road authority you chose from geo_find_jurisdiction. rationale: one sentence on the jurisdiction choice."""
     if severity not in reports.SEVERITY_WEIGHT:
         raise ToolError("severity must be low, medium or high")
-    info = open311.service_info(jurisdiction)
     with session() as conn:
         event = row(conn.execute("SELECT * FROM events WHERE id = ?", (event_id,)).fetchone())
         if event is None:
             raise ToolError(f"unknown event {event_id}")
         place = geo.reverse_geocode(conn, event["lat"], event["lon"])  # address comes from the map, not the model
-        sev = reports.estimate_severity(event["class_code"], event["box_area_ratio"], event["confidence"],
-                                        event["frames_seen"], event["width_m"])
+        conf = event["verified_confidence"] or event["recheck_confidence"] or event["confidence"]
+        sev = reports.estimate_severity(event["class_code"], event["box_area_ratio"], conf,
+                                        event["frames_seen"], event["width_m"], event.get("jolt_g"))
+        # the rule decides severity; the agent's opinion is kept in the audit log when it differs
+        if severity != sev["severity"]:
+            audit(conn, "agent:triage", "severity_disagreement", f"event:{event_id}",
+                  {"agent": severity, "rule": sev["severity"], "reason": sev["reason"]})
+        # the agent may only choose among the authorities the map evidence supports
+        candidates = [c for c in geo.jurisdiction_candidates(place) if c.get("authority")]
+        allowed = {open311.service_info(c["authority"])["authority"] if open311.service_info(c["authority"])
+                   else c["authority"] for c in candidates}
+        info = open311.service_info(jurisdiction)
+        chosen = info["authority"] if info else jurisdiction
+        if allowed and chosen not in allowed:
+            fallback = candidates[0]["authority"] if candidates else jurisdiction
+            audit(conn, "agent:triage", "jurisdiction_overridden", f"event:{event_id}",
+                  {"agent": jurisdiction, "used": fallback, "allowed": sorted(allowed)})
+            info = open311.service_info(fallback)
+            chosen = info["authority"] if info else fallback
+        if open311.service_info(chosen) is None:
+            raise ToolError(f"{chosen!r} has no delivery channel in the authority directory; choose one of "
+                            f"{sorted(allowed)}")
         try:
             result = reports.create_or_merge(
-                conn, event_id, severity, place.get("address"), place.get("municipality"), settings.dedupe_radius_m,
-                actor="agent:triage", jurisdiction=info["authority"] if info else jurisdiction,
-                rationale=_clean_text(rationale, 300), p1_candidate=sev["p1_candidate"])
+                conn, event_id, sev["severity"], place.get("address"), place.get("municipality"),
+                settings.dedupe_radius_m, actor="agent:triage", jurisdiction=chosen,
+                rationale=_clean_text(rationale, 300), p1_candidate=sev["p1_candidate"], band=sev["band"],
+                road_class=place.get("road_class"), road_name=place.get("road"))
         except ValueError as e:
             raise ToolError(str(e)) from e
     r = result["report"]
@@ -96,8 +124,9 @@ def get_report(report_id: int) -> dict:
         report = row(conn.execute("SELECT * FROM reports WHERE id = ?", (report_id,)).fetchone())
         if report is None:
             raise ToolError(f"unknown report {report_id}")
-        report["events"] = [r["id"] for r in conn.execute("SELECT id FROM events WHERE report_id = ?", (report_id,))]
-    return report
+        report["events"] = [r["id"] for r in conn.execute(
+            "SELECT id FROM events WHERE report_id = ? AND suppressed_by IS NULL", (report_id,))]
+    return _for_agent(report)
 
 
 @mcp.tool(name="reports_list", annotations=READ)

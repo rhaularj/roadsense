@@ -12,10 +12,17 @@ const stage = () => current;
 let maps = [];
 let timers = [];
 
+/* The signed-in user. The session cookie is HttpOnly; the CSRF token comes from /api/me and goes on every change. */
+const session = { user: null, csrf: "", perms: [], sso: false, authEnabled: true };
+const can = (perm) => session.perms.includes(perm);
+
 async function api(path, opts = {}) {
-  const r = await fetch(path, { headers: opts.body && !(opts.body instanceof FormData) ? { "Content-Type": "application/json" } : {}, ...opts });
+  const headers = opts.body && !(opts.body instanceof FormData) ? { "Content-Type": "application/json" } : {};
+  if (opts.method && opts.method !== "GET") headers["X-CSRF-Token"] = session.csrf;
+  const r = await fetch(path, { ...opts, headers: { ...headers, ...(opts.headers || {}) }, credentials: "same-origin" });
   const body = r.headers.get("content-type")?.includes("json") ? await r.json() : await r.text();
-  if (!r.ok) throw new Error(body?.detail || body || r.statusText);
+  if (r.status === 401 && !path.startsWith("/api/auth/")) { showLogin(); throw new Error("Please sign in"); }
+  if (!r.ok) throw new Error(typeof body?.detail === "string" ? body.detail : body?.detail ? JSON.stringify(body.detail) : body || r.statusText);
   return body;
 }
 
@@ -56,8 +63,11 @@ const icon = (n, cls = "") => `<svg class="${cls}" width="16" height="16" viewBo
 /* ---------- vocabulary ---------- */
 const STATUS = {
   pending_approval: ["Awaiting review", "amber"], approved: ["Approved", "blue"], submitted: ["Sent", "violet"],
-  fixed: ["Fixed", "green"], rejected: ["Rejected", ""],
+  fixed: ["Fixed", "green"], rejected: ["Rejected", ""], delivery_failed: ["Delivery failed", "red"],
 };
+const CLASS_LABELS = { D40: "Pothole", D20: "Alligator crack", D10: "Transverse crack", D00: "Longitudinal crack" };
+const CHANNELS = { open311: "Open311 API", cityworks: "Cityworks API", arcgis: "ArcGIS feature service", referral: "Referral package" };
+const ROLE_TONE = { admin: "violet", reviewer: "blue", driver: "cyan", viewer: "" };
 const statusPill = (s) => { const [t, c] = STATUS[s] || [s, ""]; return `<span class="pill ${c}"><span class="dot"></span>${esc(t)}</span>`; };
 const SEVERITY = { high: "red", medium: "amber", low: "" };
 const sevPill = (s) => `<span class="pill ${SEVERITY[s] || ""}">${esc(s ? s[0].toUpperCase() + s.slice(1) : "")}</span>`;
@@ -66,8 +76,11 @@ const ACTORS = {
   "agent:location": ["Location agent", "cyan", "pin"], "agent:triage": ["Triage agent", "amber", "merge"],
   "agent:filing": ["Filing agent", "green", "send"], "agent:follow_up": ["Follow-up agent", "green", "wrench"],
   driver: ["Driver", "", "user"], edge: ["Edge device", "", "video"], fallback: ["Rule engine", "", "cpu"],
+  scheduler: ["Scheduler", "", "clock"], retention: ["Retention policy", "", "shield"], dedupe: ["Dedupe", "", "merge"],
+  "sync:city": ["City data sync", "cyan", "building"], service: ["Service", "", "cpu"],
 };
-const actor = (a) => ACTORS[a] || (a?.startsWith("mcp:") ? [`${a.slice(4)} tool`, "", "layers"] : [a, "", "cpu"]);
+const actor = (a) => ACTORS[a] || (a?.startsWith("mcp:") ? [`${a.slice(4)} tool`, "", "layers"]
+  : a?.includes("@") ? [a.replace(/^user:/, ""), "blue", "user"] : a?.startsWith("feed:") ? [`${a.slice(5)} feed`, "cyan", "layers"] : [a, "", "cpu"]);
 const avatar = (a) => { const [, c, i] = actor(a); return `<span class="avatar pill ${c}">${icon(i)}</span>`; };
 const AUTH_SHORT = { "Halifax Regional Municipality": "Halifax 311", "Nova Scotia Public Works": "NS Public Works" };
 const authority = (j) => AUTH_SHORT[j] || j || "Unassigned";
@@ -99,7 +112,16 @@ function describe(a) {
     case a.action === "status_approved": return ["Approved the exact payload", "Locked by hash"];
     case a.action === "status_submitted": return [`Sent to the authority`, d?.service_request_id ? `Request ${d.service_request_id} via ${d.channel}` : ""];
     case a.action === "status_fixed": return ["Repair confirmed by the authority", ""];
-    case a.action === "status_rejected": return ["Rejected by the driver", ""];
+    case a.action === "status_rejected": return ["Rejected by a reviewer", ""];
+    case a.action === "status_delivery_failed": return ["Delivery failed: retries exhausted", d?.last_error || ""];
+    case a.action === "report_suppressed": return [`Suppressed a repeat of rejected report #${subj}`, d?.distance_m != null ? `Sighting ${d.distance_m} m from a report a reviewer rejected` : ""];
+    case a.action === "report_reclassified": return [`Damage class corrected`, d?.from ? `${d.from} → ${d.to}` : ""];
+    case a.action === "severity_disagreement": return ["Agent severity overruled by the rule", d?.agent ? `Agent said ${d.agent}, rule says ${d.rule}: ${d.reason || ""}` : ""];
+    case a.action === "jurisdiction_overridden": return ["Agent's authority overruled by map evidence", d?.agent ? `Agent said ${d.agent}; used ${d.used}` : ""];
+    case a.action === "external_match": return ["Matched a request the city already has", d?.external ? `${d.external} (${d.source}), ${d.distance_m} m away` : ""];
+    case a.action === "update_pushed": return ["Pushed new evidence to the authority", ""];
+    case a.action === "purge": return ["Retention policy applied", typeof d === "object" ? Object.entries(d || {}).map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join(" · ") : ""];
+    case a.action === "signed_in": return ["Signed in", ""];
     case a.action === "trip_done": return [`Finished trip ${subj}`, d?.summary || ""];
     case a.action === "plan": return ["Plan", typeof d === "string" ? d : ""];
     case a.action === "answer": return ["Answer", d?.content || ""];
@@ -121,14 +143,16 @@ const ROUTES = {
   review: ["Review", "Nothing is sent until you approve the exact payload", renderReview],
   reports: ["Reports", "Every defect, merged across drivers", renderReports],
   map: ["Map", "Reports on the road network", renderMap],
+  conditions: ["Road condition", "Segment-level condition estimate from open defects (not a certified survey)", renderConditions],
   activity: ["Agent activity", "Every plan, decision and tool call, from the append-only audit log", renderActivity],
   authorities: ["Authorities", "Requests delivered to Halifax 311 and Nova Scotia Public Works", renderAuthorities],
   system: ["Trust & system", "Guardrails, privacy and the agent stack", renderSystem],
+  users: ["Users", "Who can sign in, and what each role may do", renderUsers],
 };
 
 async function router() {
   const [path, qs] = location.hash.replace(/^#\/?/, "").split("?");
-  const route = ROUTES[path] ? path : "overview";
+  const route = ROUTES[path] && (path !== "users" || can("admin")) ? path : "overview";
   const params = new URLSearchParams(qs || "");
   maps.forEach((m) => m.remove()); maps = [];
   timers.forEach(clearInterval); timers = [];
@@ -319,6 +343,11 @@ function reportDetail(d) {
   const p = d.payload;
   const trail = d.trail.filter((a) => /^(verdict_|report_|status_|verify|recheck|payload)/.test(a.action));
   const pending = r.status === "pending_approval";
+  const review = can("review");
+  const failed = r.status === "delivery_failed" || (r.status === "approved" && r.last_error);
+  const trend = d.deterioration || {};
+  const city = (d.external || []).filter((x) => x.source === "city_sr");
+  const feeds = (d.external || []).filter((x) => x.source !== "city_sr");
   return `
     <div class="card-head"><h2>${esc(r.class_name)} <span class="muted">#${r.id}</span></h2>${statusPill(r.status)}<span class="spacer"></span><span class="muted small">${esc(r.address || "")}</span></div>
     <div class="card-body grid" style="gap:18px">
@@ -329,6 +358,9 @@ function reportDetail(d) {
           ${r.class_disputed ? `<div class="callout amber">${icon("alert")}<div><b>The two models disagree on the damage type.</b> YOLOv8m's label is kept; please check the photo.</div></div>` : ""}
           ${r.p1_candidate ? `<div class="callout red">${icon("alert")}<div><b>HRM Priority 1 candidate</b>: estimated width ≥ 25 cm. Depth can't be measured from video.</div></div>` : ""}
           ${r.confirmations > 1 ? `<div class="callout blue">${icon("merge")}<div><b>Seen by ${r.confirmations} independent drivers.</b> Repeat sightings were merged instead of filed again.</div></div>` : ""}
+          ${city.length ? `<div class="callout amber">${icon("building")}<div><b>The city already has a request here</b> (${city.map((x) => esc(x.id.replace(/^city:/, "#"))).join(", ")}${city[0].status ? ", " + esc(city[0].status) : ""}). Approving files a duplicate unless it adds new evidence.</div></div>` : ""}
+          ${feeds.length ? `<div class="callout blue">${icon("layers")}<div><b>Corroborated by ${feeds.length} third-party sighting(s)</b>: ${[...new Set(feeds.map((x) => esc(x.source)))].join(", ")}.</div></div>` : ""}
+          ${failed ? `<div class="callout red">${icon("alert")}<div><b>Delivery ${r.status === "delivery_failed" ? "failed" : "will be retried"}</b> after ${r.delivery_attempts} attempt(s): ${esc(r.last_error || "")}${r.next_attempt_at ? `<div class="small">Next automatic attempt at ${esc(new Date(r.next_attempt_at).toLocaleTimeString())}</div>` : ""}${review ? `<div style="margin-top:8px"><button class="btn btn-sm" id="resend">${icon("refresh")}Resend now</button></div>` : ""}</div></div>` : ""}
           <div class="facts">
             <div class="fact"><div class="k">Severity</div><div class="v">${sevPill(r.severity)}</div></div>
             <div class="fact"><div class="k">Est. width</div><div class="v">${r.class_code === "D40" && r.width_m ? Math.round(r.width_m * 100) + " cm" : r.class_code === "D40" ? "–" : "n/a for cracks"}</div></div>
@@ -336,7 +368,12 @@ function reportDetail(d) {
             <div class="fact"><div class="k">Verifier confidence</div><div class="v">${e.verified_confidence != null ? e.verified_confidence.toFixed(2) : e.recheck_confidence != null ? e.recheck_confidence.toFixed(2) + " (close-up)" : "–"}</div></div>
             <div class="fact"><div class="k">Position</div><div class="v">${e.position_uncertainty_m ? "± " + e.position_uncertainty_m + " m" : "car position"}</div></div>
             <div class="fact"><div class="k">Goes to</div><div class="v">${esc(authority(r.jurisdiction))}</div></div>
+            <div class="fact"><div class="k">Severity band</div><div class="v">${r.severity_band ? `<span class="pill mono">${esc(r.severity_band)}</span>` : "–"}</div></div>
+            <div class="fact"><div class="k">Repair target</div><div class="v">${r.repair_target_days ? `${r.repair_target_days} days` : "–"}</div></div>
+            <div class="fact"><div class="k">Trend</div><div class="v">${trend.passes > 1 ? `${esc(trend.trend)} <span class="muted small">(${trend.passes} passes)</span>` : `<span class="muted">${trend.passes || 0} pass</span>`}</div></div>
+            ${r.approved_by ? `<div class="fact"><div class="k">Approved by</div><div class="v small">${esc(r.approved_by)}</div></div>` : ""}
           </div>
+          ${pending && review ? `<div class="reclass"><label class="small muted" for="reclass">Damage type</label><select id="reclass" class="input input-sm">${Object.entries(CLASS_LABELS).map(([c, n]) => `<option value="${c}" ${c === r.class_code ? "selected" : ""}>${esc(n)} (${c})</option>`).join("")}</select><button class="btn btn-sm" id="reclass-save" disabled>Correct type</button></div>` : ""}
         </div>
       </div>
       <div class="grid two" style="gap:18px">
@@ -346,18 +383,20 @@ function reportDetail(d) {
         </div>
         <div><h3 class="h3">${pending ? "What you are approving" : "What the authority received"}</h3>
           <div class="payload"><dl>
-            <dt>To</dt><dd><b>${esc(p.authority)}</b> <span class="pill">${esc(p.channel === "open311" ? "Open311 API" : "Referral package")}</span></dd>
+            <dt>To</dt><dd><b>${esc(p.authority)}</b> <span class="pill">${esc(CHANNELS[p.channel] || p.channel)}</span></dd>
             <dt>Service</dt><dd class="mono">${esc(p.service_code)}</dd>
             <dt>Location</dt><dd>${esc(p.address_string)}<div class="muted mono">${p.lat}, ${p.long}</div></dd>
             <dt>Description</dt><dd>${esc(p.description)}</dd>
-            <dt>Photo</dt><dd><span class="muted">Privacy-blurred frame</span></dd>
+            <dt>Photo</dt><dd><span class="muted">Privacy-blurred frame · signed link, valid ${esc(String(Math.max(0, Math.round((Number(new URL(p.media_url).searchParams.get("exp") || 0) * 1000 - Date.now()) / 864e5))))} more days</span></dd>
             <dt>Attributes</dt><dd>${esc(p.attributes.severity)} severity · ${p.attributes.confirmations} confirmation(s)${p.attributes.p1_candidate ? " · P1 candidate" : ""}</dd>
           </dl><div class="hash">${icon("lock")}<span>SHA-256 <code>${esc(d.payload_hash.slice(0, 16))}…</code> ${pending ? "is locked when you approve: any later change blocks sending." : r.service_request_id ? `· request <b>${esc(r.service_request_id)}</b>` : ""}</span></div></div>
         </div>
       </div>
     </div>
-    ${pending ? `<div class="actionbar"><span class="muted small"><span class="kbd">J</span>/<span class="kbd">K</span> next/previous. Sending always needs a click.</span><span class="spacer"></span>
-      <button class="btn btn-danger" id="reject">${icon("x")}Reject</button><button class="btn btn-primary btn-lg" id="approve">${icon("send")}Approve &amp; send to ${esc(authority(r.jurisdiction))}</button></div>` : ""}`;
+    ${(d.deliveries || []).length ? `<div class="card-body" style="padding-top:0"><h3 class="h3">Deliveries</h3><ul class="feed">${d.deliveries.map((x) => `<li>${avatar(x.ok ? "agent:filing" : "fallback")}<div style="flex:1;min-width:0"><span class="what">${esc(x.kind === "update" ? "Update" : "Submission")} via ${esc(CHANNELS[x.channel] || x.channel || "?")}</span> ${x.ok ? `<span class="pill green">ok</span>` : `<span class="pill red">failed</span>`}<div class="why">${esc(x.detail || "")}</div></div><span class="when">${ago(x.ts)}</span></li>`).join("")}</ul></div>` : ""}
+    ${pending && review ? `<div class="actionbar"><span class="muted small"><span class="kbd">J</span>/<span class="kbd">K</span> next/previous. Sending always needs a click.</span><span class="spacer"></span>
+      <button class="btn btn-danger" id="reject">${icon("x")}Reject</button><button class="btn btn-primary btn-lg" id="approve">${icon("send")}Approve &amp; send to ${esc(authority(r.jurisdiction))}</button></div>` : ""}
+    ${pending && !review ? `<div class="actionbar"><span class="muted small">${icon("lock")} Only reviewers can approve or reject reports. You are signed in as ${esc(session.user?.role || "")}.</span></div>` : ""}`;
 }
 
 function bindDetail(d, after) {
@@ -374,8 +413,28 @@ function bindDetail(d, after) {
     after();
   };
   if (reject) reject.onclick = async () => {
-    try { await api(`/api/reports/${id}/reject`, { method: "POST" }); toast("Rejected: it will not be sent."); } catch (e) { toast(e.message, false); }
+    try { await api(`/api/reports/${id}/reject`, { method: "POST" }); toast("Rejected: it will not be sent, and repeat sightings are suppressed."); } catch (e) { toast(e.message, false); }
     after();
+  };
+  const sel = $("#reclass"), save = $("#reclass-save");
+  if (sel && save) {
+    sel.onchange = () => { save.disabled = sel.value === d.report.class_code; };
+    save.onclick = async () => {
+      save.disabled = true;
+      try { await api(`/api/reports/${id}/class`, { method: "POST", body: JSON.stringify({ class_code: sel.value }) }); toast(`Damage type set to ${CLASS_LABELS[sel.value]}. Review the payload again.`); }
+      catch (e) { toast(e.message, false); }
+      after(true);
+    };
+  }
+  const resend = $("#resend");
+  if (resend) resend.onclick = async () => {
+    resend.disabled = true; resend.innerHTML = `${icon("refresh", "spin")}Sending…`;
+    try {
+      const job = await api(`/api/reports/${id}/resend`, { method: "POST" });
+      const res = job.result || {};
+      if (res.service_request_id) toast(`Sent: request ${res.service_request_id}`); else toast(`Still failing: ${res.error || job.error || "unknown error"}`, false);
+    } catch (e) { toast(e.message, false); }
+    after(true);
   };
 }
 
@@ -402,7 +461,7 @@ async function renderReview(params) {
     history.replaceState(null, "", `#/review?id=${id}`);
     const d = await api(`/api/reports/${id}`);
     $("#detail").innerHTML = reportDetail(d);
-    bindDetail(d, () => renderReview(new URLSearchParams(`id=${ids[ids.indexOf(id) + 1] || ""}`)));
+    bindDetail(d, (stay) => renderReview(new URLSearchParams(`id=${stay ? id : ids[ids.indexOf(id) + 1] || ""}`)));
     reviewKeys.current = id;
   };
   $$(".inbox-item").forEach((x) => x.onclick = () => open(Number(x.dataset.id)));
@@ -556,11 +615,16 @@ async function renderSystem() {
   h.mcp_tools.forEach((t) => (servers[t.split("_")[0]] ||= []).push(t));
   const NAMES = { detector: "Vision · detector MCP", geo: "Location · geo MCP", reports: "Triage · reports MCP", city: "Filing · municipality MCP" };
   const guard = (t, d) => `<li>${icon("check")}<div><b>${t}</b><div class="muted small">${d}</div></div></li>`;
+  const dep = s.deployment || {}, warn = dep.warnings || [];
+  const kv = (o) => Object.entries(o || {}).map(([k, v]) => `<div class="fact"><div class="k">${esc(k.replace(/_/g, " "))}</div><div class="v small">${esc(typeof v === "object" ? JSON.stringify(v) : String(v))}</div></div>`).join("");
   view.innerHTML = `
+    ${warn.length ? `<div class="callout amber section-tight">${icon("alert")}<div><b>${warn.length} setting(s) are not production-ready</b><ul class="warn-list">${warn.map((w) => `<li>${esc(w)}</li>`).join("")}</ul></div></div>` : `<div class="callout green section-tight">${icon("check")}<div><b>Production checklist passed</b>: secrets set, sign-in on, data residency enforced, public evidence links.</div></div>`}
     <div class="grid two">
       <div class="card"><div class="card-head"><h2>Guardrails enforced in code</h2></div><div class="card-body"><ul class="list-check">
-        ${guard("Nothing is sent without driver approval", "The city tool refuses any report that isn't approved, whatever an agent asks.")}
-        ${guard("The driver approves the exact payload", "Approval stores a SHA-256 of what was shown; sending is refused if it changed.")}
+        ${guard("Nothing is sent without reviewer approval", "The city tool refuses any report that isn't approved, whatever an agent asks. Only the reviewer and admin roles can approve.")}
+        ${guard("The reviewer approves the exact payload", "Approval stores the payload and its SHA-256; delivery sends that snapshot and refuses if it was altered.")}
+        ${guard("Rules decide severity and authority", "The agent's severity and jurisdiction are checked against the rules and map evidence; disagreements are logged.")}
+        ${guard("Failed deliveries are retried", "Backoff from 1 minute to 6 hours, then the report is flagged for a manual resend.")}
         ${guard("Agents can only use their own tools", "Per-agent allow-lists, enforced in the client, not the prompt.")}
         ${guard("No confirmation without evidence", "Damage is confirmed only with a second model's support; disagreements go to a human.")}
         ${guard("Append-only audit log", "Every plan, verdict and tool call is recorded; updates and deletes are blocked by the database.")}
@@ -569,9 +633,11 @@ async function renderSystem() {
       </ul></div></div>
       <div class="grid" style="align-content:start">
         <div class="card"><div class="card-head"><h2>Privacy by design</h2></div><div class="card-body"><ul class="list-check">
-          ${guard("Redaction on the device", "Everything except the damage is blurred before anything leaves the vehicle; no raw video is uploaded.")}
+          ${guard("Redaction on the device, checked on the server", `Everything except the damage is blurred before upload; the server re-checks every frame${dep.privacy?.face_plate_model ? " and runs a face/plate model" : ""}.`)}
           ${guard("No images to the LLM", "Agents get text metadata only: ids, classes, confidences, positions.")}
-          ${guard("Canadian data residency ready", "Built for Nova Scotia's PIIDPA: host in a Canadian region for municipal use.")}
+          ${guard("Signed, expiring evidence links", `The authority fetches the photo with a link valid for ${dep.privacy?.media_link_days || "?"} days; nothing else is public.`)}
+          ${guard(dep.residency?.mode === "ca" ? "Canadian data residency enforced" : "Data residency not enforced", dep.residency?.mode === "ca" ? "LLM calls only go to allow-listed Canadian endpoints; free prompt-logging models are refused." : "Set ROADSENSE_DATA_RESIDENCY=ca and a Canadian no-retention LLM endpoint before municipal use (PIIDPA / FOIPOP).")}
+          ${guard("Retention", `${dep.retention?.keep_raw_video ? "Raw video is kept (development setting)" : "Raw video and GPS deleted after processing"}; rejected photos after ${dep.retention?.rejected_media_days} days; car positions after ${dep.retention?.car_position_days} days.`)}
         </ul></div></div>
         <div class="card"><div class="card-head"><h2>Agent stack</h2><span class="spacer"></span>${h.llm.enabled ? `<span class="pill green"><span class="dot"></span>Live</span>` : `<span class="pill amber">Rule engine</span>`}</div><div class="card-body facts">
           <div class="fact"><div class="k">Mode</div><div class="v">${esc(h.llm.mode)}</div></div>
@@ -581,8 +647,123 @@ async function renderSystem() {
         </div></div>
       </div>
     </div>
+    <div class="grid two section">
+      <div class="card"><div class="card-head"><h2>Delivery channels</h2><span class="spacer"></span><span class="muted small">city requests: ${dep.city_requests?.configured ? `${dep.city_requests.count} synced` : "not configured"}</span></div><div class="card-body facts">${Object.entries(dep.channels || {}).map(([a, c]) => `<div class="fact"><div class="k">${esc(authority(a))}</div><div class="v small">${esc(CHANNELS[c] || c)}</div></div>`).join("")}</div>
+        ${can("admin") && dep.city_requests?.configured ? `<div class="card-foot"><button class="btn btn-sm" id="sync-city">${icon("refresh")}Sync city requests now</button></div>` : ""}</div>
+      <div class="card"><div class="card-head"><h2>Jobs and scheduler</h2><span class="spacer"></span>${dep.scheduler?.enabled ? `<span class="pill green"><span class="dot"></span>Scheduler on</span>` : `<span class="pill amber">Scheduler off</span>`}</div><div class="card-body facts">${kv(dep.jobs)}${kv(dep.scheduler?.last_run)}<div class="fact"><div class="k">Sign-in</div><div class="v small">${s.auth?.enabled ? (s.auth.sso ? "SSO + password" : "Password") : "Disabled"}</div></div></div></div>
+    </div>
     <div class="card section"><div class="card-head"><h2>MCP servers and tools</h2><span class="spacer"></span><span class="muted small">${h.mcp_tools.length} tools over stdio</span></div>
       <div class="card-body grid kpis">${Object.entries(servers).map(([k, tools]) => `<div class="server-card"><div class="name">${icon("layers")}${esc(NAMES[k] || k)}<span class="spacer"></span><span class="faint small">${tools.length}</span></div><div class="chip-row">${tools.map((t) => `<span class="pill mono">${esc(t)}</span>`).join("")}</div></div>`).join("")}</div></div>`;
+  const sync = $("#sync-city");
+  if (sync) sync.onclick = async () => {
+    sync.disabled = true;
+    try { const j = await api("/api/external/sync", { method: "POST" }); const r = j.result || {}; toast(r.error ? `Sync failed: ${r.error}` : `City requests: ${r.added || 0} new, ${r.updated || 0} updated`, !r.error); }
+    catch (e) { toast(e.message, false); }
+    renderSystem();
+  };
+}
+
+/* ---------- Road condition (segment estimate) ---------- */
+async function renderConditions() {
+  const view = stage();
+  const c = await api("/api/conditions");
+  const segs = c.segments || [];
+  if (!segs.length) { view.innerHTML = `<div class="card">${emptyState("map", "No open defects yet", "Segment scores appear once trips produce reports. Each 100 m of road is scored from the defects on it.")}</div>`; return; }
+  const tone = { good: "green", fair: "amber", poor: "red", "very poor": "red" };
+  const avg = segs.reduce((a, x) => a + x.condition_index, 0) / segs.length;
+  view.innerHTML = `
+    <div class="grid kpis">
+      <div class="card kpi"><div class="label">Segments with defects<span class="ic blue">${icon("map")}</span></div><div class="value">${segs.length}</div><div class="hint">100 m bins along each road</div></div>
+      <div class="card kpi"><div class="label">Poor or worse<span class="ic red">${icon("alert")}</span></div><div class="value">${segs.filter((x) => x.condition_index < 55).length}</div><div class="hint">Index below 55</div></div>
+      <div class="card kpi"><div class="label">Average index<span class="ic green">${icon("activity")}</span></div><div class="value">${avg.toFixed(0)}</div><div class="hint">Of segments with open defects</div></div>
+    </div>
+    <div class="callout blue section-tight">${icon("alert")}<div><b>An estimate, not a certified survey.</b> ${esc(c.method)}. Use it to rank where to look; HRM's Pavement Quality Index survey remains the record.</div></div>
+    <div class="card section"><div class="card-head"><h2>Worst segments first</h2></div><div class="table-wrap"><table class="table"><thead><tr><th>Road</th><th>Defects</th><th>Potholes</th><th>P1</th><th style="width:28%">Condition index</th><th>Rating</th><th>Reports</th></tr></thead><tbody>
+      ${segs.map((x) => `<tr><td><b>${esc(x.road)}</b><div class="muted small mono">${x.lat.toFixed(5)}, ${x.lon.toFixed(5)}</div></td><td>${x.defects}</td><td>${x.potholes}</td><td>${x.priority1 ? `<span class="pill red">${x.priority1}</span>` : "0"}</td>
+        <td><div class="meter-row"><div class="meter"><span style="width:${x.condition_index}%" class="${tone[x.rating] || ""}"></span></div><span class="mono small">${x.condition_index.toFixed(0)}</span></div></td><td><span class="pill ${tone[x.rating] || ""}">${esc(x.rating)}</span></td>
+        <td>${x.report_ids.slice(0, 6).map((id) => `<a href="#/reports?id=${id}" class="mono small">#${id}</a>`).join(" ")}</td></tr>`).join("")}</tbody></table></div></div>`;
+}
+
+/* ---------- Users (admin) ---------- */
+async function renderUsers() {
+  const view = stage();
+  const users = await api("/api/users");
+  const roles = ["admin", "reviewer", "driver", "viewer"];
+  view.innerHTML = `
+    <div class="card"><div class="card-head"><h2>Add a user</h2><span class="desc">Password sign-in. With single sign-on, people are added on their first sign-in.</span></div>
+      <form class="card-body form-row" id="new-user" autocomplete="off">
+        <label>Email<input class="input" name="email" type="email" required maxlength="120"></label>
+        <label>Name<input class="input" name="name" maxlength="80"></label>
+        <label>Role<select class="input" name="role">${roles.map((r) => `<option ${r === "viewer" ? "selected" : ""}>${r}</option>`).join("")}</select></label>
+        <label>Initial password<input class="input" name="password" type="password" minlength="12" autocomplete="new-password" placeholder="12+ characters, Aa1"></label>
+        <button class="btn btn-primary" type="submit">${icon("plus")}Add user</button>
+      </form></div>
+    <div class="card section"><div class="card-head"><h2>Users</h2><span class="pill">${users.length}</span><span class="spacer"></span><span class="muted small">admin · reviewer (approve) · driver (upload) · viewer (read)</span></div>
+      <div class="table-wrap"><table class="table"><thead><tr><th>User</th><th>Role</th><th>Sign-in</th><th>Last sign-in</th><th>Status</th></tr></thead><tbody>
+      ${users.map((u) => `<tr data-id="${u.id}"><td><b>${esc(u.name || u.email)}</b><div class="muted small">${esc(u.email)}</div></td>
+        <td><select class="input input-sm role" aria-label="Role of ${esc(u.email)}" ${u.id === session.user?.id ? "disabled" : ""}>${roles.map((r) => `<option ${r === u.role ? "selected" : ""}>${r}</option>`).join("")}</select></td>
+        <td class="small">${u.sso ? "Single sign-on" : "Password"}</td><td class="muted small">${u.last_login ? ago(u.last_login) : "never"}</td>
+        <td>${u.id === session.user?.id ? `<span class="pill blue">You</span>` : `<button class="btn btn-sm ${u.active ? "" : "btn-primary"} toggle">${u.active ? "Disable" : "Enable"}</button>`}</td></tr>`).join("")}</tbody></table></div></div>`;
+  $("#new-user").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const f = Object.fromEntries(new FormData(ev.target));
+    if (!f.password) delete f.password;
+    try { await api("/api/users", { method: "POST", body: JSON.stringify(f) }); toast(`Added ${f.email}`); renderUsers(); } catch (e) { toast(e.message, false); }
+  };
+  $$("tr[data-id]").forEach((tr) => {
+    const id = tr.dataset.id;
+    const role = $(".role", tr), toggle = $(".toggle", tr);
+    if (role) role.onchange = async () => { try { await api(`/api/users/${id}`, { method: "PATCH", body: JSON.stringify({ role: role.value }) }); toast("Role updated"); } catch (e) { toast(e.message, false); renderUsers(); } };
+    if (toggle) toggle.onclick = async () => { try { await api(`/api/users/${id}`, { method: "PATCH", body: JSON.stringify({ active: toggle.textContent === "Enable" }) }); renderUsers(); } catch (e) { toast(e.message, false); } };
+  });
+}
+
+/* ---------- sign-in ---------- */
+function showLogin(message = "") {
+  const box = $("#login");
+  if (!box.hidden && !message) return;
+  session.user = null;
+  box.hidden = false;
+  document.body.classList.add("signed-out");
+  box.innerHTML = `<form class="login-card card" id="login-form">
+      <div class="workspace" style="padding:0;margin-bottom:4px"><div class="brand-mark"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M8 21l3-18M16 21l-3-18M12 6v2M12 11v2M12 16v2"/></svg></div><div class="workspace-text"><div class="brand-name">RoadSense</div><div class="brand-sub">Sign in to the Halifax pilot</div></div></div>
+      ${message ? `<div class="callout red">${icon("alert")}<div>${esc(message)}</div></div>` : ""}
+      <label>Email<input class="input" name="email" type="email" autocomplete="username" required></label>
+      <label>Password<input class="input" name="password" type="password" autocomplete="current-password" required></label>
+      <button class="btn btn-primary btn-lg" type="submit">${icon("lock")}Sign in</button>
+      ${session.sso ? `<div class="or"><span>or</span></div><a class="btn btn-lg" href="/auth/oidc/login">${icon("building")}Sign in with your organization</a>` : ""}
+      <div class="faint small">First run: the admin password is in <code>data/initial_admin_password.txt</code> unless ROADSENSE_ADMIN_PASSWORD is set.</div>
+    </form>`;
+  $("#login-form input[name=email]").focus();
+  $("#login-form").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const f = Object.fromEntries(new FormData(ev.target));
+    try {
+      await api("/api/auth/login", { method: "POST", body: JSON.stringify(f) });
+      await loadSession();
+      box.hidden = true; box.innerHTML = ""; document.body.classList.remove("signed-out");
+      $("#sign-out").hidden = !session.authEnabled;
+      router();
+    } catch (e) { showLogin(e.message); }
+  };
+}
+
+async function loadSession() {
+  const me = await (await fetch("/api/me", { credentials: "same-origin" })).json();
+  session.sso = me.sso; session.authEnabled = me.auth_enabled;
+  if (!me.authenticated) { session.user = null; session.perms = []; return false; }
+  Object.assign(session, { user: me.user, csrf: me.csrf, perms: me.permissions });
+  const u = me.user;
+  $("#user-chip").innerHTML = `<span class="avatar pill ${ROLE_TONE[u.role] || ""}">${esc((u.name || u.email)[0].toUpperCase())}</span><span class="user-text hide-sm"><span class="user-name">${esc(u.name || u.email)}</span><span class="user-role">${esc(u.role)}</span></span>`;
+  $("#user-chip").hidden = false;
+  $("#user-menu-email").textContent = u.email;
+  $$("[data-perm]").forEach((el) => { el.hidden = !can(el.dataset.perm); });
+  return true;
+}
+
+async function signOut() {
+  try { await api("/api/auth/logout", { method: "POST" }); } catch {}
+  location.hash = "#/overview"; location.reload();
 }
 
 /* ---------- command palette (Ctrl/⌘ K) ---------- */
@@ -590,11 +771,13 @@ const palette = {
   el: $("#palette"), q: $("#palette-q"), list: $("#palette-list"), pending: [], items: [], sel: 0, opener: null,
   commands() {
     const nav = [["overview", "grid"], ["trips", "video"], ["review", "inbox"], ["reports", "file"], ["map", "map"],
-      ["activity", "activity"], ["authorities", "building"], ["system", "shield"]]
+      ["conditions", "activity"], ["activity", "activity"], ["authorities", "building"], ["system", "shield"],
+      ...(can("admin") ? [["users", "user"]] : [])]
       .map(([r, ic]) => ({ group: "Go to", label: ROUTES[r][0], hint: ROUTES[r][1], icon: ic, run: () => (location.hash = `#/${r}`) }));
     const acts = [
       { group: "Actions", label: "New trip", hint: "Upload a dashcam video", icon: "plus", run: () => { location.hash = "#/trips"; setTimeout(() => $("#video")?.click(), 300); } },
       { group: "Actions", label: "Toggle theme", hint: "Light / dark", icon: "moon", run: toggleTheme },
+      ...(session.authEnabled && session.user ? [{ group: "Actions", label: "Sign out", hint: session.user.email, icon: "lock", run: signOut }] : []),
     ];
     const reports = this.pending.map((r) => ({ group: "Awaiting review", label: `${r.class_name} #${r.id}`, hint: r.address || "", icon: "inbox", run: () => (location.hash = `#/review?id=${r.id}`) }));
     return [...nav, ...acts, ...reports];
@@ -645,7 +828,16 @@ function toggleTheme() {
 $("#menu").onclick = () => $("#sidebar").classList.toggle("open");
 $("#scrim").onclick = () => $("#sidebar").classList.remove("open");
 $("#theme").onclick = toggleTheme;
-window.addEventListener("hashchange", router);
-if (location.hash.includes("new=1")) setTimeout(() => $("#video")?.click(), 300);
-router();
-setInterval(refreshChrome, 15000);
+$("#user-chip").onclick = () => { const m = $("#user-menu"); m.hidden = !m.hidden; };
+document.addEventListener("click", (e) => { if (!e.target.closest("#user-chip, #user-menu")) $("#user-menu").hidden = true; });
+$("#sign-out").onclick = signOut;
+window.addEventListener("hashchange", () => { if (session.user) router(); });
+(async () => {
+  try {
+    if (!(await loadSession())) { showLogin(); return; }
+  } catch (e) { main.innerHTML = errorState(e); return; }
+  $("#sign-out").hidden = !session.authEnabled;
+  if (location.hash.includes("new=1")) setTimeout(() => $("#video")?.click(), 300);
+  router();
+  setInterval(() => { if (session.user) refreshChrome(); }, 15000);
+})();
