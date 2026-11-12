@@ -32,6 +32,8 @@ class DamageEvent(BaseModel):
     distance_m: float | None = Field(default=None, ge=0, le=100)
     width_m: float | None = Field(default=None, ge=0, le=20)
     position_uncertainty_m: float | None = Field(default=None, ge=0, le=200)
+    # peak vertical acceleration (g) from the device IMU around the sighting: corroborates pothole depth
+    jolt_g: float | None = Field(default=None, ge=0, le=10)
 
     @field_validator("class_code")
     @classmethod

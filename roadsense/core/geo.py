@@ -133,17 +133,22 @@ def jurisdiction_candidates(place: dict) -> list[dict]:
     100-series highways and motorways are provincial. Other numbered provincial routes (NS 2, Trunk 7, Route 333...)
     run through municipalities and ownership varies by section, so they are returned as ambiguous for the agent to
     weigh; local streets belong to the municipality."""
+    from .open311 import rules
+
+    r = rules()
+    provincial = r.get("provincial_authority", PROVINCIAL)
+    lo, hi = r.get("provincial_route_range", [100, 199])
     muni, cls, ref = place.get("municipality"), place.get("road_class"), place.get("road_ref") or ""
     numbers = [int(n) for n in re.findall(r"\d+", ref)]
-    if cls in ("motorway", "motorway_link") or any(100 <= n <= 199 for n in numbers):
-        return [{"authority": PROVINCIAL, "confidence": "high",
-                 "evidence": f"{place.get('road') or 'road'} is a 100-series highway ({ref or cls})"},
+    if cls in r.get("provincial_road_classes", ["motorway", "motorway_link"]) or any(lo <= n <= hi for n in numbers):
+        return [{"authority": provincial, "confidence": "high",
+                 "evidence": f"{place.get('road') or 'road'} is a {lo}-series highway ({ref or cls})"},
                 {"authority": muni, "confidence": "low", "evidence": "municipality surrounding the highway"}]
-    if numbers or cls == "trunk":
+    if numbers or cls in r.get("ambiguous_road_classes", ["trunk"]):
         return [{"authority": muni, "confidence": "medium",
                  "evidence": f"numbered route {ref or cls} inside {muni}; many urban sections are municipally "
                              "maintained"},
-                {"authority": PROVINCIAL, "confidence": "medium",
+                {"authority": provincial, "confidence": "medium",
                  "evidence": f"{ref or cls} is a numbered provincial route; rural sections are provincially maintained"}]
     return [{"authority": muni, "confidence": "high" if muni else "low",
              "evidence": f"local road ({cls or 'unknown class'}) in {muni or 'unknown municipality'}"}]

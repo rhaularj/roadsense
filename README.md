@@ -126,8 +126,10 @@ crop that skips the top 35% of the frame lowered recall from 0.64 to 0.53 on the
 | OpenStreetMap reverse geocoding (Nominatim), road class and route numbers | Offline fixture for two Halifax roads when there is no network |
 | Road snapping: each defect is moved to the nearest drivable road (OSRM, within 25 m) | The public OSRM demo server is for development; run your own for a pilot |
 | The simulated drive follows real street geometry (OSRM route over OpenStreetMap, `roadsense/edge/halifax_route.json`) | |
-| MCP servers, agent loop, OpenRouter client, approvals, audit log | **HRM has no public Open311 API**: reports go to a local mock GeoReport v2 server |
-| | Nova Scotia Public Works gets a referral package (JSON), not a live submission |
+| MCP servers, agent loop, OpenRouter client, approvals, audit log | **HRM has no public Open311 API**: reports go to a local mock GeoReport v2 server by default |
+| Delivery adapters for Open311, Cityworks REST and ArcGIS feature services, with retries and updates | Cityworks and ArcGIS adapters are tested against the vendors' API shapes, not against HRM's instance |
+| Read-only sync of the city's own service requests from any ArcGIS layer (HRM publishes Cityworks SRs on ArcGIS Hub) | Off until `ROADSENSE_CITY_SR_LAYER_URL` is set |
+| Sign-in, roles, OIDC single sign-on (Entra ID), signed evidence links, server-side redaction check, retention | Nova Scotia Public Works gets a referral package (JSON, emailed when SMTP is set), not an API submission |
 | | Camera height, pitch and field of view are defaults until calibrated per vehicle |
 
 ## Setup
@@ -172,11 +174,16 @@ research synthesis in [docs/research-synthesis.md](docs/research-synthesis.md):
 | **Review** | The approval inbox: photo, flags (P1 candidate, class disputed, N drivers), the agents' decision timeline, and the exact payload locked by SHA-256. Sending always needs a click |
 | **Reports** | All reports with status filters and a detail page |
 | **Map** | Leaflet map (vendored) coloured by status, sized by independent drivers |
+| **Road condition** | Segment-level condition estimate (0-100, PCI-style deducts per 100 m) from open defects, worst first |
 | **Agent activity** | Every plan, verdict and tool call, filterable by agent and trip |
 | **Authorities** | Halifax 311 (Open311) requests, NS Public Works referrals, Follow-up agent, driver notifications |
-| **Trust & system** | Guardrails, privacy, model and quota, MCP servers and tools |
+| **Trust & system** | Production checklist, guardrails, privacy and retention, delivery channels, jobs and scheduler, MCP servers |
+| **Users** (admin) | Add people, set roles (admin, reviewer, driver, viewer), disable accounts |
 
-The browser never sees the API token: the web server holds it and exposes a fixed set of calls.
+Everyone signs in (password or single sign-on). On first start the admin password is written to
+`data/initial_admin_password.txt` unless `ROADSENSE_ADMIN_PASSWORD` is set. The browser never sees the API token:
+the web server holds it, checks the user's role, and exposes a fixed set of calls. Production setup:
+[docs/deployment.md](docs/deployment.md); security model: [SECURITY.md](SECURITY.md).
 
 ## Keyless demo
 
@@ -188,12 +195,13 @@ python scripts/demo.py --record   # re-record it live (needs OPENROUTER_API_KEY,
 The demo trip (`demo/trip/`) covers every decision: real damage on Halifax streets, Highway 102 routed to Nova
 Scotia Public Works, an ambiguous numbered route, a disputed class, and a second driver's sighting that merges. Each run
 starts from a fresh `data/demo` folder with offline geocoding, so the agents see the same tool results as when the run
-was recorded. Browse the result with `ROADSENSE_DATA_DIR=data/demo ROADSENSE_OFFLINE_GEO=1 python scripts/run_all.py`.
+was recorded. Tool results the agents see are kept stable through a field allow-list; if a replay reports
+INCOMPLETE after an upgrade, re-record with `--record`. Browse the result with `ROADSENSE_DATA_DIR=data/demo ROADSENSE_OFFLINE_GEO=1 python scripts/run_all.py`.
 
 ## Evidence
 
 ```bash
-python scripts/check.py                                   # ruff + 38 tests + pip-audit (no known vulnerabilities)
+python scripts/check.py                                   # ruff + 65 tests + pip-audit (no known vulnerabilities)
 python scripts/eval_verifier.py --split <RDD>/val --tune  # choose the verification rule on validation data
 python scripts/eval_verifier.py --split <RDD>/test        # report it once on test
 python scripts/eval_agents.py [--llm]                     # 42 decision scenarios end to end
@@ -219,10 +227,18 @@ scripts/        run_all, check, eval_verifier, eval_agents, smoke_llm, list_free
 
 ## Roadmap
 
-- Recorded replay of a full trip for the keyless demo (needs ~20 requests of free quota)
-- Recorded Halifax drive with a phone GPS log; calibrate the camera; tape-measure potholes to validate widths
-- Direction-aware dedupe (DBSCAN/H3) and "confirmed" only after two independent drivers
-- Postgres + PostGIS, a job queue, MCP over Streamable HTTP for horizontal scaling; Canadian hosting (PIIDPA)
+Done in the production-readiness pass: sign-in and roles, durable jobs and a scheduler, delivery retries and updates,
+Cityworks/ArcGIS/email adapters, city-request sync, signed media, server-side redaction check, retention, data
+residency enforcement, cross-class dedupe and rejection suppression, severity bands and repair targets, segment
+condition estimate, deterioration trends, third-party feed ingest, ground-truth label export, CI, pinned versions.
+
+Next:
+- Recorded Halifax drive with a phone GPS log; calibrate the camera; tape-measure potholes to validate widths;
+  fine-tune on the exported Halifax labels (`scripts/export_labels.py`)
+- Validate the Cityworks/ArcGIS field mapping with HRM; a Canadian no-retention LLM endpoint; a PIA
+- In-vehicle capture (phone app or fleet kit on Jetson/Hailo) with automatic GPS sync
+- Postgres + PostGIS, object storage, MCP over Streamable HTTP for horizontal scaling
+- French UI and a WCAG 2.1 AA audit; winter (snow-cover) gating
 
 ## Team
 

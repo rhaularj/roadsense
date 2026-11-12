@@ -35,7 +35,8 @@ def test_event_upload_requires_token_and_valid_payload(db):
     assert c.post("/events", data={"event": json.dumps(EVENT)}, files=not_jpeg, headers=AUTH).status_code == 415
     assert c.post("/events", data={"event": json.dumps(EVENT)}, files=files, headers=AUTH).json() == {
         "accepted": EVENT["id"]}
-    assert c.get("/trips/trip1/events").json()[0]["status"] == "received"
+    assert c.get("/trips/trip1/events").status_code == 401  # every read needs the service token
+    assert c.get("/trips/trip1/events", headers=AUTH).json()[0]["status"] == "received"
 
 
 class StubLLM:

@@ -4,7 +4,10 @@ import tempfile
 # Settings are read at import time: point every test at a throwaway data dir, offline geocoding and no LLM.
 _tmp = tempfile.mkdtemp(prefix="roadsense-test-")
 os.environ.update(ROADSENSE_DATA_DIR=_tmp, ROADSENSE_OFFLINE_GEO="1", ROADSENSE_USE_LLM="0",
-                  ROADSENSE_API_TOKEN="test-token", ROADSENSE_OPEN311_API_KEY="test-key", OPENROUTER_API_KEY="")
+                  ROADSENSE_API_TOKEN="test-token", ROADSENSE_OPEN311_API_KEY="test-key", OPENROUTER_API_KEY="",
+                  ROADSENSE_ADMIN_EMAIL="admin@roadsense.test", ROADSENSE_ADMIN_PASSWORD="Test-Admin-Passw0rd",
+                  ROADSENSE_SESSION_SECRET="test-session-secret", ROADSENSE_MEDIA_SECRET="test-media-secret",
+                  ROADSENSE_SCHEDULER="0")
 
 import json  # noqa: E402
 

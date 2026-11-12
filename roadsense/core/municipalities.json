@@ -1,18 +1,40 @@
 {
+  "_rules": {
+    "region": "Nova Scotia",
+    "provincial_authority": "Nova Scotia Public Works",
+    "provincial_route_range": [100, 199],
+    "provincial_road_classes": ["motorway", "motorway_link"],
+    "ambiguous_road_classes": ["trunk"],
+    "p1_width_m": 0.25,
+    "p1_depth_note": "HRM Priority 1: at least 25 cm wide and 8 cm deep (depth is estimated, never measured)",
+    "severity_bands": {
+      "D40": [[0.10, "S1"], [0.25, "S2"], [0.50, "S3"], [99, "S4"]],
+      "area": [[0.01, "S1"], [0.03, "S2"], [0.06, "S3"], [1, "S4"]]
+    },
+    "repair_target_days": {
+      "S4": {"motorway": 4, "primary": 4, "default": 7},
+      "S3": {"motorway": 7, "primary": 7, "default": 14},
+      "S2": {"default": 30},
+      "S1": {"default": 60}
+    }
+  },
   "Halifax Regional Municipality": {
-    "aliases": ["Halifax", "Dartmouth", "Bedford", "Sackville", "Cole Harbour", "Halifax County"],
+    "aliases": ["Halifax", "Dartmouth", "Bedford", "Sackville", "Cole Harbour", "Halifax County", "HRM"],
     "channel": "open311",
+    "channels": ["open311", "cityworks", "arcgis"],
     "open311_url": "${ROADSENSE_OPEN311_URL}",
     "service_code": "POTHOLE",
     "crack_service_code": "ROAD_SURFACE",
+    "cityworks_request_type": "POTHOLE",
     "jurisdiction_id": "halifax.ca",
     "contact": "311 (phone), contactus@311.halifax.ca",
-    "notes": "HRM has no public Open311 API; the demo files to a local mock GeoReport v2 server."
+    "notes": "HRM's system of record is Cityworks. Open311 is the mock default; set channel to cityworks or arcgis once HRM issues an integration user."
   },
   "Nova Scotia Public Works": {
     "aliases": ["NS Public Works", "Nova Scotia Department of Public Works", "Province of Nova Scotia"],
     "channel": "referral",
+    "referral_email": "dpw-occ@novascotia.ca",
     "contact": "Operations Contact Centre 1-844-696-7737, dpw-occ@novascotia.ca, or 511",
-    "notes": "Provincial roads and 100-series highways. No public API: RoadSense prepares a referral package."
+    "notes": "Provincial roads and 100-series highways. No public API: RoadSense prepares a referral package and emails it when SMTP is configured."
   }
 }
