@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
-  <link rel="stylesheet" href="/static/app.css?v=8">
+  <link rel="stylesheet" href="/static/app.css?v=9">
   <script>try { const t = localStorage.getItem("rs-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
 </head>
 <body>
@@ -82,13 +82,37 @@
   </div>
 </div>
 <div class="landing" id="landing" hidden>
+  <div class="ld-progress" aria-hidden="true"><span id="ld-progress"></span></div>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="ld-car" viewBox="0 0 24 40"><rect x="2" y="1" width="20" height="38" rx="7" fill="#FFB547"/><rect x="5" y="8" width="14" height="8" rx="2" fill="#0B0D10"/><rect x="5" y="26" width="14" height="6" rx="2" fill="#0B0D10" opacity=".8"/><rect x="3" y="2" width="5" height="3" rx="1.5" fill="#FFF6DC"/><rect x="16" y="2" width="5" height="3" rx="1.5" fill="#FFF6DC"/></symbol>
+      <symbol id="ld-street" viewBox="0 0 640 320">
+        <rect width="640" height="320" fill="#1A1F27"/>
+        <rect x="0" y="0" width="640" height="150" fill="#202631"/>
+        <rect x="30" y="40" width="130" height="110" fill="#2C3440"/><rect x="50" y="62" width="22" height="20" fill="#FFD08A"/><rect x="90" y="62" width="22" height="20" fill="#3A4452"/><rect x="128" y="62" width="18" height="20" fill="#FFD08A"/><rect x="72" y="104" width="30" height="46" fill="#11151B"/>
+        <rect x="116" y="104" width="38" height="20" rx="3" fill="#E8EAED"/><text x="135" y="119" font-family="monospace" font-size="13" font-weight="700" text-anchor="middle" fill="#0B0D10">1847</text>
+        <rect x="190" y="20" width="160" height="130" fill="#283039"/><rect x="210" y="40" width="26" height="22" fill="#3A4452"/><rect x="252" y="40" width="26" height="22" fill="#FFD08A"/><rect x="294" y="40" width="26" height="22" fill="#3A4452"/><rect x="210" y="80" width="26" height="22" fill="#FFD08A"/><rect x="252" y="80" width="26" height="22" fill="#3A4452"/><rect x="294" y="80" width="26" height="22" fill="#FFD08A"/>
+        <rect x="380" y="55" width="230" height="95" fill="#2C3440"/><rect x="400" y="75" width="60" height="30" fill="#3A4452"/><rect x="480" y="75" width="60" height="30" fill="#FFD08A"/><rect x="560" y="75" width="34" height="30" fill="#3A4452"/>
+        <rect x="0" y="150" width="640" height="18" fill="#3A4150"/>
+        <circle cx="356" cy="122" r="11" fill="#E9C2A6"/><rect x="346" y="133" width="20" height="30" rx="7" fill="#7AB8FF"/>
+        <circle cx="560" cy="124" r="10" fill="#C99878"/><rect x="551" y="134" width="18" height="28" rx="7" fill="#FF6B5B"/>
+        <rect x="0" y="168" width="640" height="152" fill="#191C21"/>
+        <rect x="0" y="240" width="640" height="5" fill="url(#ld-dash)"/>
+        <rect x="40" y="186" width="190" height="62" rx="16" fill="#5B6B86"/><rect x="72" y="172" width="120" height="30" rx="12" fill="#4A586F"/><rect x="82" y="178" width="44" height="20" rx="4" fill="#A9C4E6"/><rect x="136" y="178" width="48" height="20" rx="4" fill="#A9C4E6"/>
+        <rect x="104" y="226" width="62" height="18" rx="3" fill="#F5F5F0"/><text x="135" y="240" font-family="monospace" font-size="13" font-weight="700" text-anchor="middle" fill="#0B0D10">ABC 123</text>
+        <circle cx="82" cy="250" r="14" fill="#0B0D10"/><circle cx="196" cy="250" r="14" fill="#0B0D10"/>
+      </symbol>
+      <pattern id="ld-dash" width="60" height="5" patternUnits="userSpaceOnUse"><rect width="34" height="5" fill="#FFB547" opacity=".8"/></pattern>
+    </defs>
+  </svg>
+
   <header class="ld-wrap ld-nav">
     <a class="ld-brand" href="#top" aria-label="RoadSense home">
       <svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#FFB547"/><path d="M11 26 L15 6 M21 26 L17 6" stroke="#0B0D10" stroke-width="2.4" stroke-linecap="round"/><circle cx="16" cy="17" r="2.6" fill="#0B0D10"/></svg>
       <span>RoadSense</span>
     </a>
     <nav class="ld-links" aria-label="Home sections">
-      <a href="#ld-how">How it works</a><a href="#ld-trust">Privacy &amp; trust</a><a href="#ld-cities">For cities</a>
+      <a href="#ld-how">How it works</a><a href="#ld-trust">Privacy</a><a href="#ld-cities">For cities</a>
     </nav>
     <div class="ld-actions">
       <button class="ld-btn ld-ghost-plain" type="button" data-signin>Sign in</button>
@@ -96,32 +120,57 @@
     </div>
   </header>
 
-  <section class="ld-wrap ld-hero" id="top">
-    <div class="ld-hero-copy">
-      <div class="ld-pill ld-rise"><span class="ld-dot ld-blink"></span>Agentic road-defect reporting for municipalities</div>
-      <h1 class="ld-rise ld-d1">Every pothole,<br>seen, sorted<br><span>and sent.</span></h1>
-      <p class="ld-lede ld-rise ld-d2">A dashcam spots road damage, blurs every bystander on the device, and AI agents triage it to the right road authority. A reviewer approves before anything is filed.</p>
-      <div class="ld-cta ld-rise ld-d3">
-        <button class="ld-btn ld-primary ld-lg" type="button" data-signin>Sign in to RoadSense
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
-        <a class="ld-btn ld-ghost ld-lg" href="#ld-how">See how it works</a>
+  <section class="ld-hero-band" id="top">
+    <svg class="ld-city" viewBox="0 0 1440 760" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <g class="ld-streets">
+        <path d="M-20 140 H1460"/><path d="M-20 380 H1460"/><path d="M-20 620 H1460"/>
+        <path d="M180 -20 V780"/><path d="M520 -20 V780"/><path d="M900 -20 V780"/><path d="M1260 -20 V780"/>
+        <path d="M-20 720 C 300 600, 520 520, 900 380 S 1300 160, 1460 60" class="ld-arterial"/>
+      </g>
+      <g class="ld-pins">
+        <g transform="translate(520 380)"><circle r="18" class="ld-pin-ring"/><circle r="5"/></g>
+        <g transform="translate(1260 140)"><circle r="18" class="ld-pin-ring" style="animation-delay:.8s"/><circle r="5"/></g>
+        <g transform="translate(180 620)"><circle r="18" class="ld-pin-ring" style="animation-delay:1.6s"/><circle r="5"/></g>
+        <g transform="translate(900 620)"><circle r="18" class="ld-pin-ring" style="animation-delay:2.2s"/><circle r="5"/></g>
+      </g>
+      <g class="ld-vehicles">
+        <circle r="5" class="ld-veh ld-v1"/><circle r="5" class="ld-veh ld-v2"/><circle r="5" class="ld-veh ld-v3"/><circle r="5" class="ld-veh ld-v4"/>
+      </g>
+    </svg>
+
+    <div class="ld-wrap ld-hero">
+      <div class="ld-hero-copy">
+        <div class="ld-pill ld-rise"><span class="ld-dot ld-blink"></span>Agentic road-defect reporting for municipalities</div>
+        <h1 class="ld-rise ld-d1" aria-label="Every pothole, seen, sorted and sent.">
+          <span aria-hidden="true">Every<br><span class="ld-rotor"><span class="ld-rotor-track"><span>pothole,</span><span>crack,</span><span>bad patch,</span><span>pothole,</span></span></span><br>seen, sorted<br><span class="ld-mark">and sent.</span></span>
+        </h1>
+        <p class="ld-lede ld-rise ld-d2">A dashcam spots road damage, blurs every bystander on the device, and AI agents triage it to the right road authority. A reviewer approves before anything is filed.</p>
+        <div class="ld-cta ld-rise ld-d3">
+          <button class="ld-btn ld-primary ld-lg ld-magnet" type="button" data-signin>Sign in to RoadSense
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+          <a class="ld-btn ld-ghost ld-lg" href="#ld-how">See how it works</a>
+        </div>
+      </div>
+
+      <div class="ld-hero-art ld-rise ld-d4" id="ld-tilt" aria-hidden="true">
+        <div class="ld-scene">
+          <div class="ld-road"><div class="ld-lane"></div><div class="ld-edge ld-edge-l"></div><div class="ld-edge ld-edge-r"></div></div>
+          <div class="ld-headlight"></div>
+          <div class="ld-scan"></div>
+          <div class="ld-box ld-b1"><span>D40 pothole · S3</span></div>
+          <div class="ld-box ld-b2"><span>D20 alligator</span></div>
+          <div class="ld-box ld-b3"><span>D00 crack</span></div>
+          <div class="ld-hud"><span><span class="ld-dot ld-red ld-blink"></span>REC · EDGE REDACTED</span><span>44.6488° N, 63.5752° W</span></div>
+          <div class="ld-corners"><i></i><i></i><i></i><i></i></div>
+        </div>
+        <div class="ld-float">
+          <div class="ld-float-head"><span class="ld-ping"><span></span><span></span></span>Pending approval</div>
+          <svg width="228" height="70" viewBox="0 0 228 70"><path class="ld-route" d="M4 60 C 50 60, 60 14, 110 22 S 180 56, 224 10" fill="none" stroke="#FFB547" stroke-width="3" stroke-linecap="round"/></svg>
+          <div class="ld-float-foot">Routed to <b>Halifax Regional Municipality</b> · Open311</div>
+        </div>
       </div>
     </div>
-    <div class="ld-hero-art ld-rise ld-d4" aria-hidden="true">
-      <div class="ld-scene">
-        <div class="ld-road"><div class="ld-lane"></div><div class="ld-edge ld-edge-l"></div><div class="ld-edge ld-edge-r"></div></div>
-        <div class="ld-scan"></div>
-        <div class="ld-box ld-b1"><span>D40 pothole · S3</span></div>
-        <div class="ld-box ld-b2"><span>D20 alligator</span></div>
-        <div class="ld-box ld-b3"><span>D00 crack</span></div>
-        <div class="ld-hud"><span><span class="ld-dot ld-red ld-blink"></span>EDGE · REDACTED</span><span>44.6488° N, 63.5752° W</span></div>
-      </div>
-      <div class="ld-float">
-        <div class="ld-float-head"><span class="ld-ping"><span></span><span></span></span>Pending approval</div>
-        <svg width="228" height="70" viewBox="0 0 228 70"><path class="ld-route" d="M4 60 C 50 60, 60 14, 110 22 S 180 56, 224 10" fill="none" stroke="#FFB547" stroke-width="3" stroke-linecap="round"/></svg>
-        <div class="ld-float-foot">Routed to <b>Halifax Regional Municipality</b> · Open311</div>
-      </div>
-    </div>
+    <div class="ld-scroll-cue" aria-hidden="true"><span></span></div>
   </section>
 
   <div class="ld-marquee" aria-hidden="true"><div class="ld-marq">
@@ -130,48 +179,62 @@
   </div></div>
 
   <section class="ld-wrap ld-section" id="ld-how">
-    <p class="ld-eyebrow">HOW IT WORKS</p>
-    <h2>From a bump on the road to a ticket the city can act on.</h2>
-    <div class="ld-steps">
-      <article class="ld-card"><div class="ld-num">01</div><h3>Capture</h3><p>A YOLO model finds potholes and cracks in dashcam video and estimates size and severity.</p><div class="ld-flow"></div></article>
-      <article class="ld-card"><div class="ld-num">02</div><h3>Redact</h3><p>Everything outside the damage is blurred on the device, and the server checks it again.</p><div class="ld-flow" style="animation-delay:.6s"></div></article>
-      <article class="ld-card"><div class="ld-num">03</div><h3>Triage</h3><p>Agents verify the sighting, merge duplicates and pick the authority from map evidence.</p><div class="ld-flow" style="animation-delay:1.2s"></div></article>
-      <article class="ld-card"><div class="ld-num">04</div><h3>Approve &amp; file</h3><p>A reviewer sees the exact payload. Only then is it sent, and follow-up tracks the repair.</p><div class="ld-flow" style="animation-delay:1.8s"></div></article>
+    <p class="ld-eyebrow ld-reveal">HOW IT WORKS</p>
+    <h2 class="ld-reveal">From a bump on the road to a ticket the city can act on.</h2>
+    <div class="ld-journey" id="ld-journey">
+      <div class="ld-track" aria-hidden="true"><div class="ld-track-fill"></div><svg class="ld-track-car" width="24" height="40"><use href="#ld-car"/></svg></div>
+      <ol class="ld-steps">
+        <li class="ld-card ld-stop ld-spot"><div class="ld-num">01</div><svg class="ld-ico" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="3" y="6" width="14" height="12" rx="2"/><path d="M17 10l4-2v8l-4-2"/></svg><h3>Capture</h3><p>A YOLO model finds potholes and cracks in dashcam video and estimates size and severity.</p></li>
+        <li class="ld-card ld-stop ld-spot"><div class="ld-num">02</div><svg class="ld-ico" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg><h3>Redact</h3><p>Everything outside the damage is blurred on the device, and the server checks it again.</p></li>
+        <li class="ld-card ld-stop ld-spot"><div class="ld-num">03</div><svg class="ld-ico" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11a7 7 0 0114 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg><h3>Triage</h3><p>Agents verify the sighting, merge duplicates and pick the authority from map evidence.</p></li>
+        <li class="ld-card ld-stop ld-spot"><div class="ld-num">04</div><svg class="ld-ico" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 12l5 5L20 6"/></svg><h3>Approve &amp; file</h3><p>A reviewer sees the exact payload. Only then is it sent, and follow-up tracks the repair.</p></li>
+      </ol>
     </div>
   </section>
 
   <section class="ld-band" id="ld-trust">
     <div class="ld-wrap ld-section ld-split">
-      <div class="ld-split-copy">
-        <p class="ld-eyebrow">PRIVACY &amp; TRUST</p>
-        <h2>Built for public bodies, not just demos.</h2>
-        <p class="ld-lede">Raw video is deleted after processing, prompts can be pinned to Canadian hosts, and every decision lands in an append-only audit log.</p>
+      <div class="ld-split-copy ld-reveal">
+        <p class="ld-eyebrow">PRIVACY BY DESIGN</p>
+        <h2>The city sees the pothole. Nobody else.</h2>
+        <p class="ld-lede">Drag the slider. Faces, plates and house numbers are blurred on the device before a frame leaves the car, and the server checks again. Only the damage stays sharp.</p>
+        <ul class="ld-chips">
+          <li>Nothing sent unapproved</li><li>Canadian data residency</li><li>Roles &amp; single sign-on</li><li>Expiring evidence links</li><li>Append-only audit log</li>
+        </ul>
       </div>
-      <div class="ld-grid2">
-        <div class="ld-card ld-sm"><b>Nothing sent unapproved</b><p>Approval stores the payload and its hash.</p></div>
-        <div class="ld-card ld-sm"><b>Data residency</b><p>LLM hosts limited to an allow-list.</p></div>
-        <div class="ld-card ld-sm"><b>Roles &amp; SSO</b><p>Admin, reviewer, driver, viewer, with OIDC.</p></div>
-        <div class="ld-card ld-sm"><b>Signed evidence links</b><p>Photos expire; no hot-linking.</p></div>
+      <div class="ld-compare ld-reveal" id="ld-compare">
+        <div class="ld-cmp-layer"><svg viewBox="0 0 640 320" role="img" aria-label="Street scene before redaction"><use href="#ld-street"/></svg></div>
+        <div class="ld-cmp-layer ld-cmp-red"><svg viewBox="0 0 640 320" role="img" aria-label="The same scene after redaction"><use href="#ld-street"/></svg></div>
+        <svg class="ld-cmp-hole" viewBox="0 0 640 320" aria-hidden="true">
+          <ellipse cx="430" cy="276" rx="62" ry="18" fill="#0A0B0D"/><ellipse cx="430" cy="272" rx="50" ry="12" fill="#05060A"/>
+          <rect x="356" y="244" width="148" height="56" rx="6" fill="none" stroke="#FF6B5B" stroke-width="3"/>
+          <rect x="356" y="222" width="118" height="20" rx="4" fill="#FF6B5B"/><text x="364" y="236" font-family="monospace" font-size="12" font-weight="700" fill="#0B0D10">D40 · kept sharp</text>
+        </svg>
+        <div class="ld-cmp-handle" aria-hidden="true"><span></span></div>
+        <span class="ld-cmp-tag ld-tag-l" aria-hidden="true">Raw frame</span>
+        <span class="ld-cmp-tag ld-tag-r" aria-hidden="true">What leaves the car</span>
+        <label class="ld-sr" for="ld-cmp-range">Compare the raw and redacted frame</label>
+        <input id="ld-cmp-range" class="ld-cmp-range" type="range" min="0" max="100" value="50">
       </div>
     </div>
   </section>
 
   <section class="ld-wrap ld-section" id="ld-cities">
-    <div class="ld-final">
-      <div class="ld-lane ld-lane-faint" aria-hidden="true"></div>
+    <div class="ld-final ld-reveal">
+      <div class="ld-final-road" aria-hidden="true"><svg class="ld-final-car" width="24" height="40"><use href="#ld-car"/></svg></div>
       <div class="ld-final-copy"><h2>Ready to review today's sightings?</h2><p>Sign in with your city account or the admin credentials from setup.</p></div>
       <div class="ld-cta">
-        <button class="ld-btn ld-primary ld-lg" type="button" data-signin>Sign in</button>
+        <button class="ld-btn ld-primary ld-lg ld-magnet" type="button" data-signin>Sign in</button>
         <button class="ld-btn ld-ghost ld-warm ld-lg" type="button" data-sso>Single sign-on</button>
       </div>
     </div>
   </section>
 
-  <footer class="ld-wrap ld-foot"><span>© RoadSense</span><span><a href="#ld-trust">Security</a><a href="#ld-how">How it works</a></span></footer>
+  <footer class="ld-wrap ld-foot"><span>© RoadSense</span><span><a href="#ld-trust">Privacy</a><a href="#ld-how">How it works</a></span></footer>
 </div>
 <div class="login" id="login" hidden></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script src="/static/vendor/leaflet/leaflet.js"></script>
-<script src="/static/app.js?v=11"></script>
+<script src="/static/app.js?v=12"></script>
 </body>
 </html>
