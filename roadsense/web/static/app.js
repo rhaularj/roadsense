@@ -733,7 +733,9 @@ function showLogin(message = "") {
       <button class="btn btn-primary btn-lg" type="submit">${icon("lock")}Sign in</button>
       ${session.sso ? `<div class="or"><span>or</span></div><a class="btn btn-lg" href="/auth/oidc/login">${icon("building")}Sign in with your organization</a>` : ""}
       <div class="faint small">First run: the admin password is in <code>data/initial_admin_password.txt</code> unless ROADSENSE_ADMIN_PASSWORD is set.</div>
+      <button class="btn btn-ghost btn-sm login-back" type="button" id="login-back">← Back to home</button>
     </form>`;
+  $("#login-back").onclick = () => { box.hidden = true; box.innerHTML = ""; showLanding(); };
   $("#login-form input[name=email]").focus();
   $("#login-form").onsubmit = async (ev) => {
     ev.preventDefault();
@@ -741,12 +743,30 @@ function showLogin(message = "") {
     try {
       await api("/api/auth/login", { method: "POST", body: JSON.stringify(f) });
       await loadSession();
-      box.hidden = true; box.innerHTML = ""; document.body.classList.remove("signed-out");
+      box.hidden = true; box.innerHTML = ""; hideLanding(); document.body.classList.remove("signed-out");
       $("#sign-out").hidden = !session.authEnabled;
       router();
     } catch (e) { showLogin(e.message); }
   };
 }
+
+/* ---------- public home, shown before sign-in ---------- */
+function showLanding() {
+  const page = $("#landing");
+  if (!page) { showLogin(); return; }
+  session.user = null;
+  document.body.classList.add("signed-out");
+  page.hidden = false;
+  page.scrollTop = 0;
+  const open = () => { hideLanding(); showLogin(); };
+  $$("#landing [data-signin]").forEach((b) => { b.onclick = open; });
+  $$("#landing [data-sso]").forEach((b) => { b.onclick = () => { if (session.sso) location.href = "/auth/oidc/login"; else open(); }; });
+  $$('#landing a[href^="#"]').forEach((a) => {
+    a.onclick = (e) => { e.preventDefault(); page.querySelector(a.getAttribute("href"))?.scrollIntoView({ behavior: "smooth" }); };
+  });
+}
+
+function hideLanding() { const page = $("#landing"); if (page) page.hidden = true; }
 
 async function loadSession() {
   const me = await (await fetch("/api/me", { credentials: "same-origin" })).json();
@@ -834,7 +854,7 @@ $("#sign-out").onclick = signOut;
 window.addEventListener("hashchange", () => { if (session.user) router(); });
 (async () => {
   try {
-    if (!(await loadSession())) { showLogin(); return; }
+    if (!(await loadSession())) { if (location.hash.includes("signin")) showLogin(); else showLanding(); return; }
   } catch (e) { main.innerHTML = errorState(e); return; }
   $("#sign-out").hidden = !session.authEnabled;
   if (location.hash.includes("new=1")) setTimeout(() => $("#video")?.click(), 300);
