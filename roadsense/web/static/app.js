@@ -733,7 +733,9 @@ function showLogin(message = "") {
       <button class="btn btn-primary btn-lg" type="submit">${icon("lock")}Sign in</button>
       ${session.sso ? `<div class="or"><span>or</span></div><a class="btn btn-lg" href="/auth/oidc/login">${icon("building")}Sign in with your organization</a>` : ""}
       <div class="faint small">First run: the admin password is in <code>data/initial_admin_password.txt</code> unless ROADSENSE_ADMIN_PASSWORD is set.</div>
+      <button class="btn btn-ghost btn-sm login-back" type="button" id="login-back">← Back to home</button>
     </form>`;
+  $("#login-back").onclick = () => { box.hidden = true; box.innerHTML = ""; showLanding(); };
   $("#login-form input[name=email]").focus();
   $("#login-form").onsubmit = async (ev) => {
     ev.preventDefault();
@@ -741,12 +743,95 @@ function showLogin(message = "") {
     try {
       await api("/api/auth/login", { method: "POST", body: JSON.stringify(f) });
       await loadSession();
-      box.hidden = true; box.innerHTML = ""; document.body.classList.remove("signed-out");
+      box.hidden = true; box.innerHTML = ""; hideLanding(); document.body.classList.remove("signed-out");
       $("#sign-out").hidden = !session.authEnabled;
       router();
     } catch (e) { showLogin(e.message); }
   };
 }
+
+/* ---------- public home, shown before sign-in ---------- */
+function showLanding() {
+  const page = $("#landing");
+  if (!page) { showLogin(); return; }
+  session.user = null;
+  document.body.classList.add("signed-out");
+  page.hidden = false;
+  page.scrollTop = 0;
+  const open = () => { hideLanding(); showLogin(); };
+  $$("#landing [data-signin]").forEach((b) => { b.onclick = open; });
+  $$("#landing [data-sso]").forEach((b) => { b.onclick = () => { if (session.sso) location.href = "/auth/oidc/login"; else open(); }; });
+  $$('#landing a[href^="#"]').forEach((a) => {
+    a.onclick = (e) => { e.preventDefault(); page.querySelector(a.getAttribute("href"))?.scrollIntoView({ behavior: "smooth" }); };
+  });
+  wireLandingMotion(page);
+}
+
+/* Pointer and scroll effects for the home page. Wired once; CSS turns them off under reduced motion. */
+function wireLandingMotion(page) {
+  if (page.dataset.wired) return;
+  page.dataset.wired = "1";
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // hero: the camera view tilts toward the pointer and a headlight follows it
+  const tilt = $("#ld-tilt"), scene = tilt?.querySelector(".ld-scene");
+  if (tilt && scene && !still) {
+    tilt.addEventListener("pointermove", (e) => {
+      const r = scene.getBoundingClientRect();
+      const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+      scene.style.setProperty("--ld-rx", `${(x - 0.5) * 10}deg`);
+      scene.style.setProperty("--ld-ry", `${(0.5 - y) * 8}deg`);
+      scene.style.setProperty("--ld-hx", `${x * 100}%`);
+      scene.style.setProperty("--ld-hy", `${y * 100}%`);
+    });
+    tilt.addEventListener("pointerleave", () => ["--ld-rx", "--ld-ry", "--ld-hx", "--ld-hy"].forEach((p) => scene.style.removeProperty(p)));
+  }
+
+  // primary buttons lean toward the pointer
+  if (!still) $$("#landing .ld-magnet").forEach((b) => {
+    b.addEventListener("pointermove", (e) => {
+      const r = b.getBoundingClientRect();
+      b.style.setProperty("--ld-mx", `${(e.clientX - r.left - r.width / 2) * 0.18}px`);
+      b.style.setProperty("--ld-my", `${(e.clientY - r.top - r.height / 2) * 0.3}px`);
+    });
+    b.addEventListener("pointerleave", () => { b.style.removeProperty("--ld-mx"); b.style.removeProperty("--ld-my"); });
+  });
+
+  // cards: a soft spotlight under the pointer
+  $$("#landing .ld-spot").forEach((c) => c.addEventListener("pointermove", (e) => {
+    const r = c.getBoundingClientRect();
+    c.style.setProperty("--ld-sx", `${e.clientX - r.left}px`);
+    c.style.setProperty("--ld-sy", `${e.clientY - r.top}px`);
+  }));
+
+  // before/after redaction slider
+  const cmp = $("#ld-compare"), range = $("#ld-cmp-range");
+  if (cmp && range) range.addEventListener("input", () => cmp.style.setProperty("--ld-cut", `${range.value}%`));
+
+  // sections fade up as they enter
+  const io = new IntersectionObserver((entries) => entries.forEach((en) => {
+    if (en.isIntersecting) { en.target.classList.add("is-in"); io.unobserve(en.target); }
+  }), { root: page, threshold: 0.15 });
+  $$("#landing .ld-reveal").forEach((el) => io.observe(el));
+
+  // scroll: top progress line, and the car driving through the four steps
+  const bar = $("#ld-progress"), journey = $("#ld-journey"), stops = $$("#landing .ld-stop");
+  let ticking = false;
+  const onScroll = () => {
+    ticking = false;
+    const max = page.scrollHeight - page.clientHeight;
+    bar?.style.setProperty("--ld-p", max > 0 ? (page.scrollTop / max).toFixed(4) : 0);
+    if (!journey) return;
+    const r = journey.getBoundingClientRect(), vh = page.clientHeight;
+    const j = still ? 1 : Math.min(1, Math.max(0, (vh * 0.85 - r.top) / (r.height + vh * 0.35)));
+    journey.style.setProperty("--ld-j", j.toFixed(4));
+    stops.forEach((s, i) => s.classList.toggle("is-lit", j >= (i + 0.35) / stops.length));
+  };
+  page.addEventListener("scroll", () => { if (!ticking) { ticking = true; requestAnimationFrame(onScroll); } }, { passive: true });
+  onScroll();
+}
+
+function hideLanding() { const page = $("#landing"); if (page) page.hidden = true; }
 
 async function loadSession() {
   const me = await (await fetch("/api/me", { credentials: "same-origin" })).json();
@@ -834,7 +919,7 @@ $("#sign-out").onclick = signOut;
 window.addEventListener("hashchange", () => { if (session.user) router(); });
 (async () => {
   try {
-    if (!(await loadSession())) { showLogin(); return; }
+    if (!(await loadSession())) { if (location.hash.includes("signin")) showLogin(); else showLanding(); return; }
   } catch (e) { main.innerHTML = errorState(e); return; }
   $("#sign-out").hidden = !session.authEnabled;
   if (location.hash.includes("new=1")) setTimeout(() => $("#video")?.click(), 300);
