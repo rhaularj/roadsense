@@ -47,6 +47,7 @@ log = logging.getLogger("roadsense.web")
 async def lifespan(app: FastAPI):
     if settings.auth_enabled:
         auth.bootstrap_admin()
+    auth.seed_inspectors()
     yield
 
 

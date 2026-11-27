@@ -23,7 +23,7 @@ the report says; a reviewer approves the exact payload. Only people move a repor
 ```
 Awaiting review ──reject──▶ Closed (Rejected)
       │ approve
-Awaiting inspection ──assign inspector──▶ Inspection assigned ──no repair needed──▶ Closed (No repair needed)
+Awaiting inspection ──assign inspector──▶ Inspection assigned ──no repair needed──▶ Closed (Repair not needed)
                                                 │ repair needed (+ estimated repair date)
                                           Repair needed ──mark repaired──▶ Repaired ──seen again / reopened──▶ Reopened
                                                                               │ clean passes on later trips      │ new date
@@ -33,7 +33,10 @@ Awaiting inspection ──assign inspector──▶ Inspection assigned ──no
 One state machine (`roadsense/core/workflow.py`) holds the statuses, which role may take each step and what each step
 needs; it is the only code that changes a report's status, and every step is written to the report's hash-chained
 ledger with who and when. Roles: **reviewer** (approve, reject, assign, and any step), **inspector** (record the
-outcome of inspections assigned to them, mark them repaired, reopen), **admin**. A report past its estimated repair
+outcome of inspections assigned to them, mark them repaired, reopen), **admin**. Three inspectors, Inspector 1, 2 and 3,
+are created on first start for the assign dropdown; they have no password, so a reviewer or admin records the outcome
+for them (set a password on the Users page to let one sign in). Inspections are tracked on the Reports page:
+**Inspection assigned**, then **Repair needed** or **Closed (Repair not needed)**. A report past its estimated repair
 date is **overdue** and is flagged on lists, the map and the overview. The service-standard clock starts at approval
 and follows these steps (see [docs/service-standards.md](docs/service-standards.md)).
 
@@ -246,7 +249,6 @@ research synthesis in [docs/research-synthesis.md](docs/research-synthesis.md):
 | **Pothole risk** | Freeze-thaw pothole risk forecast per road segment for the next 14 days: High/Medium/Low counts, a risk map, a filterable table with the main factors, and a page per segment with its sightings, ECCC weather and factor breakdown. A labelled heuristic, with its evaluation alongside |
 | **Exposure risk** | Each report's physical severity, exposure (cycling, pedestrian, bus and road context from OpenStreetMap) and overall risk kept as separate values, Low/Medium/High/Critical, on a map and in a table filterable by risk, damage, neighbourhood, road class and nearby infrastructure. The report page shows every factor and feature |
 | **Agent activity** | Every plan, verdict and tool call, filterable by agent and trip |
-| **My inspections** | An inspector's assigned reports, highest priority first, with the repair date and overdue flag |
 | **Service standards** | Approved reports against the municipality's published service standard (overdue, approaching, completed within target), configurable rules and holidays, and each report's hash-chained duty-of-care ledger: [docs/service-standards.md](docs/service-standards.md) |
 | **Authorities** | Referrals to other road authorities (only with `ROADSENSE_FORWARD_MODE=on`), driver notifications |
 | **Trust & system** | Production checklist, guardrails, privacy and retention, delivery channels, jobs and scheduler, MCP servers |

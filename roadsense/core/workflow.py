@@ -29,7 +29,7 @@ STATUSES = ("pending_approval", "awaiting_inspection", "inspection_assigned", "r
 LABELS = {"pending_approval": "Awaiting review", "awaiting_inspection": "Awaiting inspection",
           "inspection_assigned": "Inspection assigned", "repair_needed": "Repair needed", "repaired": "Repaired",
           "reopened": "Reopened", "closed": "Closed"}
-CLOSED_REASONS = {"rejected": "Rejected", "no_repair_needed": "No repair needed", "referred": "Referred"}
+CLOSED_REASONS = {"rejected": "Rejected", "no_repair_needed": "Repair not needed", "referred": "Referred"}
 OPEN = ("pending_approval", "awaiting_inspection", "inspection_assigned", "repair_needed", "reopened")
 DUE = ("repair_needed", "reopened")  # statuses with a repair date that can pass
 INITIAL = "pending_approval"
@@ -152,7 +152,7 @@ def _inspector(conn: sqlite3.Connection, value) -> dict:
         uid = int(value)
     except (TypeError, ValueError) as e:
         raise WorkflowError("inspector_id must be a user id", 422) from e
-    u = row(conn.execute("SELECT id, email, role, active FROM users WHERE id = ?", (uid,)).fetchone())
+    u = row(conn.execute("SELECT id, email, name, role, active FROM users WHERE id = ?", (uid,)).fetchone())
     if u is None or not u["active"] or u["role"] not in INSPECT_ROLES:
         raise WorkflowError("inspector_id must be an active inspector, reviewer or admin", 422)
     return u
@@ -180,7 +180,8 @@ def _reject(conn, r, f, actor, ts, on):
 def _assign(conn, r, f, actor, ts, on):
     u = _inspector(conn, f.get("inspector_id"))
     return ({"inspector_id": u["id"], "inspection_assigned_at": ts},
-            {"inspector_id": u["id"], "inspector": u["email"], "previous_inspector_id": r.get("inspector_id")})
+            {"inspector_id": u["id"], "inspector": u["email"], "inspector_name": u["name"],
+             "previous_inspector_id": r.get("inspector_id")})
 
 
 def _repair_needed(conn, r, f, actor, ts, on):

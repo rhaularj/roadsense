@@ -82,7 +82,7 @@ const STATUS = {
 };
 const STATUS_ORDER = Object.keys(STATUS);
 const OPEN_STATUSES = ["pending_approval", "awaiting_inspection", "inspection_assigned", "repair_needed", "reopened"];
-const CLOSED_REASON = { rejected: "Rejected", no_repair_needed: "No repair needed", referred: "Referred" };
+const CLOSED_REASON = { rejected: "Rejected", no_repair_needed: "Repair not needed", referred: "Referred" };
 const statusLabel = (r) => r.status_label || (r.status === "closed" && CLOSED_REASON[r.closed_reason] ? `Closed (${CLOSED_REASON[r.closed_reason]})`
   : r.status === "repaired" && r.verification_status === "verified" ? "Repaired (verified)" : (STATUS[r.status] || [r.status])[0]);
 const day = (iso) => iso ? new Date(`${String(iso).slice(0, 10)}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "–";
@@ -201,9 +201,9 @@ function workflowStep(action, d) {
   switch (action) {
     case "approve": return ["Approved for inspection", "The reviewed payload is locked by hash"];
     case "reject": return ["Rejected by a reviewer", d.reason || "Repeat sightings here are suppressed"];
-    case "assign": return [`Inspection assigned to ${d.inspector || "an inspector"}`, d.previous_inspector_id ? "Re-assigned" : ""];
+    case "assign": return [`Inspection assigned to ${d.inspector_name || d.inspector || "an inspector"}`, d.previous_inspector_id ? "Re-assigned" : ""];
     case "repair_needed": return [`Repair needed by ${day(d.repair_eta)}`, [band, d.notes].filter(Boolean).join(" · ")];
-    case "no_repair_needed": return ["Inspected: no repair needed", d.notes || ""];
+    case "no_repair_needed": return ["Inspected: repair not needed", d.notes || ""];
     case "repaired": return ["Marked repaired", d.notes || "RoadSense now checks the spot on later trips"];
     case "reopen": return [`Reopened${d.reopen_count > 1 ? ` (${d.reopen_count}×)` : ""}`, d.reason || ""];
     case "reschedule": return [`Repair date moved to ${day(d.repair_eta?.to)}`, `Was ${day(d.repair_eta?.from)}${d.reason ? ` · ${d.reason}` : ""}`];
@@ -218,7 +218,6 @@ const ROUTES = {
   overview: ["Overview", "What the agents found and where every repair stands", renderOverview],
   trips: ["Trips", "Upload a dashcam drive; the edge device and agents take it from there", renderTrips],
   review: ["Review", "Approve a report to send it to inspection; nothing leaves RoadSense", renderReview],
-  inspections: ["My inspections", "Reports assigned to you, highest priority first", renderInspections],
   reports: ["Reports", "Every defect, merged across drivers", renderReports],
   map: ["Map", "Reports on the road network", renderMap],
   conditions: ["Road condition", "Segment-level condition estimate from open defects (not a certified survey)", renderConditions],
@@ -235,6 +234,8 @@ async function router() {
   // Pothole Risk and Exposure Risk are workspaces over the Map, not pages: old links land on the Map with one open
   // the assistant is a panel over every page, not a page: old links open it over the Overview
   if (path === "assistant") { aiToggle(true); location.replace("#/overview"); return; }
+  // My inspections was folded into the Reports page: old links land on its Inspection assigned tab
+  if (path === "inspections") { location.replace("#/reports?status=inspection_assigned"); return; }
   const ws = workspaceFor(path);
   if (ws) { riskModal.pending = { kind: ws, qs: qs || "" }; location.replace("#/map"); return; }
   const route = ROUTES[path] && (path !== "users" || can("admin")) ? path : "overview";
@@ -305,11 +306,8 @@ const more = (href, label) => `<a href="${href}" class="link-more">${label}${ico
 
 async function refreshChrome() {
   try {
-    const [pending, sys, mine] = await Promise.all([api("/api/reports?status=pending_approval"), api("/api/system"),
-      can("inspect") ? api("/api/reports?inspector_id=me").catch(() => []) : []]);
+    const [pending, sys] = await Promise.all([api("/api/reports?status=pending_approval"), api("/api/system")]);
     $("#review-count").textContent = pending.length || "";
-    const todo = mine.filter((r) => ["inspection_assigned", "repair_needed", "reopened"].includes(r.status)).length;
-    if ($("#insp-count")) $("#insp-count").textContent = todo || "";
     // The tab title carries the queue size, so a reviewer sees new work from another tab
     const base = document.title.replace(/^\(\d+\) /, "");
     document.title = pending.length ? `(${pending.length}) ${base}` : base;
@@ -608,6 +606,11 @@ async function renderMap(params) {
 /* Status filters: one per workflow status, plus Overdue (computed by the server from the repair date) */
 const filterBy = (all, f) => f === "all" ? all : f === "overdue" ? all.filter((r) => r.overdue) : all.filter((r) => r.status === f);
 const statusTabs = (all, filter, keys) => `<div class="tabs" role="group" aria-label="Show reports by status">${keys.map((s) => `<button type="button" aria-pressed="${s === filter}" class="${s === filter ? "on" : ""} ${s === "overdue" ? "tab-overdue" : ""}" data-s="${s}">${s === "all" ? "All" : s === "overdue" ? "Overdue" : STATUS[s][0]}<span class="n">${filterBy(all, s).length}</span></button>`).join("")}</div>`;
+/* A report closed as Repair not needed carries what the inspection found, under its status */
+const closedNote = (r) => {
+  const text = r.status === "closed" && r.closed_reason === "no_repair_needed" ? r.inspection_notes || "" : "";
+  return text ? `<div class="small muted status-note" title="${esc(text)}">${esc(text.length > 90 ? `${text.slice(0, 89)}…` : text)}</div>` : "";
+};
 async function renderReports(params) {
   const view = stage();
   const id = params.get("id");
@@ -624,7 +627,7 @@ async function renderReports(params) {
   const row = (r) => `<tr class="click" tabindex="0" data-id="${r.id}" data-q="${esc(`${r.class_name} ${r.address || ""} #${r.id} ${authority(r.jurisdiction)} ${r.trip_id || ""}`.toLowerCase())}"><td class="c-thumb"><img class="thumb" loading="lazy" src="/api/media/${encodeURIComponent(r.best_event_id)}.jpg?crop=1" alt=""></td>
         <td class="c-name"><span class="nowrap"><span class="strong">${esc(r.class_name)}</span> <span class="faint small mono">#${r.id}</span></span><div class="chip-row" style="margin-top:4px">${flags(r)}</div></td>
         <td class="c-loc">${esc(r.address || "")}</td><td class="c-auth nowrap">${esc(authority(r.jurisdiction))}</td><td class="c-sev">${sevPill(r.severity)}</td>
-        <td class="c-drv" data-label="Drivers">${r.confirmations}</td><td class="c-pri mono" data-label="Priority">${r.priority}</td><td class="c-status">${statusPill(r.status, r)}${overduePill(r)}</td><td class="c-go">${icon("arrow", "row-arrow")}</td></tr>`;
+        <td class="c-drv" data-label="Drivers">${r.confirmations}</td><td class="c-pri mono" data-label="Priority">${r.priority}</td><td class="c-status">${statusPill(r.status, r)}${overduePill(r)}${closedNote(r)}</td><td class="c-go">${icon("arrow", "row-arrow")}</td></tr>`;
   const group = ([trip, rs]) => `<tbody class="trip-group" data-trip="${esc(trip)}">
       <tr class="group-row"><th colspan="9" scope="rowgroup"><button type="button" class="group-toggle" aria-expanded="true">
         ${icon("arrow", "chev")}<span class="avatar pill">${icon("video")}</span><span class="g-title"><b class="mono">${esc(trip)}</b><span class="g-meta">${started[trip] ? ago(started[trip]) + " · " : ""}<span class="g-n">${rs.length}</span> report${rs.length === 1 ? "" : "s"}</span></span>
@@ -781,7 +784,7 @@ function trailItem(a) {
     ${ph ? `<button type="button" class="photo-btn tl-photo" data-zoom="${esc(kind)}" aria-label="Enlarge the ${esc(kind.toLowerCase())}"><img src="${photoSrc(ph)}" alt="${esc(kind)}" loading="lazy"><span class="photo-hint">${icon("zoom")}Enlarge</span></button>` : ""}</li>`;
 }
 
-/* Review → Inspection → Repair → Repaired: where the report is, with who and when for each step */
+/* Review → Inspection → Repair needed / not needed → Repaired: where the report is, with who and when for each step */
 function progressStrip(r, trail) {
   const last = (...acts) => [...trail].reverse().find((x) => acts.some((a) => x.action === `ledger_workflow_${a}`));
   const by = (x) => x ? `${esc(actor(x.actor)[0])} · ${esc(day(x.ts))}` : "";
@@ -790,14 +793,15 @@ function progressStrip(r, trail) {
   const inspected = [...trail].find((x) => ["ledger_workflow_repair_needed", "ledger_workflow_no_repair_needed"].includes(x.action));
   const fixed = last("repaired");
   const at = { pending_approval: 0, awaiting_inspection: 1, inspection_assigned: 1, repair_needed: 2, reopened: 2, repaired: 3 }[r.status]
-    ?? (reason === "no_repair_needed" ? 1 : 0);
+    ?? (reason === "no_repair_needed" ? 2 : 0);
   const state = (i) => r.status === "closed" ? (i < at ? "done" : i === at ? "stop" : "skip") : r.status === "repaired" ? "done" : i < at ? "done" : i === at ? "now" : "todo";
   const insp = r.inspector ? esc(r.inspector.name || r.inspector.email) : "";
   const steps = [
     ["Review", rejected ? `Rejected · ${by(rejected)}` : approved ? `Approved · ${by(approved)}` : "Waiting for a reviewer"],
-    ["Inspection", reason === "referred" ? "Referred to the road's own authority" : inspected ? `${reason === "no_repair_needed" ? "No repair needed" : "Inspected"} · ${by(inspected)}`
+    ["Inspection", reason === "referred" ? "Referred to the road's own authority" : inspected ? `Inspected · ${by(inspected)}`
       : assigned ? `Assigned to ${insp || "an inspector"} · ${esc(day(assigned.ts))}` : at >= 1 ? "No inspector assigned yet" : ""],
-    ["Repair", r.status === "reopened" ? `Reopened ${r.reopen_count}× · needs a new date` : r.repair_eta ? `${r.overdue ? "Overdue · was due" : at > 2 ? "Planned for" : "Due"} ${esc(day(r.repair_eta))}` : ""],
+    reason === "no_repair_needed" ? ["Repair not needed", `Closed · ${by(inspected)}`]
+      : ["Repair needed", r.status === "reopened" ? `Reopened ${r.reopen_count}× · needs a new date` : r.repair_eta ? `${r.overdue ? "Overdue · was due" : at > 2 ? "Planned for" : "Due"} ${esc(day(r.repair_eta))}` : at < 2 && r.status !== "closed" ? "Decided at inspection" : ""],
     ["Repaired", fixed && r.status === "repaired" ? `${by(fixed)} · ${r.verification_status === "verified" ? "independently verified" : "awaiting independent check"}` : ""],
   ];
   return `<ol class="wf-strip" aria-label="Workflow progress">${steps.map(([t, sub], i) => `<li class="wf-step is-${state(i)}${i === 2 && r.overdue ? " is-late" : ""}" ${state(i) === "now" ? 'aria-current="step"' : ""}>
@@ -818,7 +822,7 @@ function nextStep(d) {
   if (can_.has("no_repair_needed")) parts.push(`<form class="wf-form" data-act="inspection">
       <fieldset class="wf-outcome"><legend class="wf-field">Inspection outcome</legend>
         <label class="wf-radio"><input type="radio" name="outcome" value="repair_needed" checked>Repair needed</label>
-        <label class="wf-radio"><input type="radio" name="outcome" value="no_repair_needed">No repair needed</label></fieldset>
+        <label class="wf-radio"><input type="radio" name="outcome" value="no_repair_needed">Repair not needed</label></fieldset>
       <div class="wf-grid" data-when="repair_needed">${eta()}
         <label class="wf-field">Severity band<select class="input" name="severity_band">${["S1", "S2", "S3", "S4"].map((b) => `<option ${b === r.severity_band ? "selected" : ""}>${b}</option>`).join("")}</select></label></div>
       ${notes("What you found")}${photo("Site photo")}
@@ -1037,29 +1041,6 @@ document.addEventListener("keydown", (ev) => {
   if (i >= 0 && next) location.hash = `#/reports?id=${next}`;
   else toast(k === "j" ? "This is the last report in the list" : "This is the first report in the list");
 });
-
-/* ---------- My inspections: what a road inspector works through ---------- */
-async function renderInspections() {
-  const view = stage();
-  const mine = await api("/api/reports?inspector_id=me");
-  const todo = mine.filter((r) => ["inspection_assigned", "repair_needed", "reopened"].includes(r.status));
-  const done = mine.filter((r) => !todo.includes(r));
-  reportNav.ids = [...todo, ...done].map((r) => r.id); // J / K on a report page follow this list
-  const row = (r) => `<tr class="click" tabindex="0" data-id="${r.id}"><td class="c-thumb"><img class="thumb" loading="lazy" src="/api/media/${encodeURIComponent(r.best_event_id)}.jpg?crop=1" alt=""></td>
-      <td class="c-name"><span class="nowrap"><span class="strong">${esc(r.class_name)}</span> <span class="faint small mono">#${r.id}</span></span><div class="chip-row" style="margin-top:4px">${sevPill(r.severity)}${flags(r)}</div></td>
-      <td class="c-loc">${esc(r.address || "")}</td><td class="c-status">${statusPill(r.status, r)}${overduePill(r)}</td>
-      <td class="c-due nowrap" data-label="Repair date">${r.repair_eta ? esc(day(r.repair_eta)) : r.status === "reopened" ? `<span class="muted">needs a new date</span>` : "–"}</td>
-      <td class="c-pri mono" data-label="Priority">${r.priority}</td><td class="c-go">${icon("arrow", "row-arrow")}</td></tr>`;
-  const table = (rs) => `<div class="table-wrap"><table class="table"><thead><tr><th></th><th>Damage</th><th>Location</th><th>Status</th><th>Repair date</th><th>Priority</th><th></th></tr></thead><tbody>${rs.map(row).join("")}</tbody></table></div>`;
-  const late = todo.filter((r) => r.overdue).length;
-  view.innerHTML = `<div class="card"><div class="card-head"><h2>To do</h2><span class="pill ${todo.length ? "amber" : ""}">${todo.length}</span><span class="spacer"></span>${late ? `<span class="pill red">${icon("clock")}${late} overdue</span>` : ""}</div>
-      ${todo.length ? table(todo) : emptyState("check", "Nothing assigned to you", "A reviewer assigns an inspection after approving a report; it appears here.")}</div>
-    ${done.length ? `<div class="card section"><div class="card-head"><h2>Done</h2><span class="pill">${done.length}</span><span class="desc">Repaired or closed: RoadSense keeps checking repairs on later trips</span></div>${table(done)}</div>` : ""}`;
-  $$("tr.click", view).forEach((tr) => {
-    tr.onclick = () => location.hash = `#/reports?id=${tr.dataset.id}`;
-    tr.onkeydown = (e) => { if (e.key === "Enter") tr.onclick(); };
-  });
-}
 
 /* ---------- evidence lightbox: the reviewer's only look at the damage, so let them see it properly ---------- */
 function openLightbox(src, caption) {
@@ -2419,7 +2400,7 @@ async function signOut() {
 const palette = {
   el: $("#palette"), q: $("#palette-q"), list: $("#palette-list"), pending: [], items: [], sel: 0, opener: null,
   commands() {
-    const nav = [["overview", "grid"], ["trips", "video"], ["review", "inbox"], ...(can("inspect") ? [["inspections", "eye"]] : []), ["reports", "file"], ["map", "map"],
+    const nav = [["overview", "grid"], ["trips", "video"], ["review", "inbox"], ["reports", "file"], ["map", "map"],
       ["conditions", "activity"], ["activity", "activity"], ["standards", "clock"], ["authorities", "building"], ["system", "shield"],
       ...(can("admin") ? [["users", "user"]] : [])]
       .map(([r, ic]) => ({ group: "Go to", label: ROUTES[r][0], hint: ROUTES[r][1], icon: ic, run: () => (location.hash = `#/${r}`) }));

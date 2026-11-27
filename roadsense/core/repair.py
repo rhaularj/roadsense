@@ -35,7 +35,7 @@ ACTOR = "verify:repair"
 
 
 def lifecycle(report: dict) -> str:
-    """The status label people see (core.workflow), e.g. "Repaired (verified)" or "Closed (No repair needed)"."""
+    """The status label people see (core.workflow), e.g. "Repaired (verified)" or "Closed (Repair not needed)"."""
     return workflow.label(report)
 
 

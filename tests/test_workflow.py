@@ -264,7 +264,7 @@ def test_backdated_transition_uses_the_given_time(insp):
 
 def test_labels_cover_closed_reasons():
     assert workflow.label({"status": "closed", "closed_reason": "rejected"}) == "Closed (Rejected)"
-    assert workflow.label({"status": "closed", "closed_reason": "no_repair_needed"}) == "Closed (No repair needed)"
+    assert workflow.label({"status": "closed", "closed_reason": "no_repair_needed"}) == "Closed (Repair not needed)"
     assert workflow.label({"status": "repaired", "verification_status": "verified"}) == "Repaired (verified)"
 
 

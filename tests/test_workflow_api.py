@@ -336,3 +336,57 @@ def test_metrics_count_statuses_overdue_reopens_and_time_to_repair(staff):
     assert "roadsense_reports_overdue 1" in text  # b: due 10 Nov, still not repaired
     assert "roadsense_report_reopens 1" in text
     assert "roadsense_approve_to_repaired_days_median 6" in text  # a: approved 2 Nov, repaired (last) 8 Nov
+
+
+# ---------------- Inspector 1, 2 and 3: the assign picker, and the Reports page sections ----------------
+def test_seeded_inspectors_fill_the_picker_once_and_cannot_sign_in(db):
+    from roadsense.web import auth
+
+    assert auth.seed_inspectors() == [e for e, _ in auth.INSPECTORS]  # created before the first admin
+    auth.bootstrap_admin()  # the seeded inspectors do not count as a first user
+    with session() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM users WHERE role = 'admin'").fetchone()[0] == 1
+        conn.execute("UPDATE users SET active = 0 WHERE email = 'inspector3@roadsense.local'")
+    assert auth.seed_inspectors() == []  # restarts never duplicate or re-activate them
+    auth._attempts.clear()  # other tests' sign-ins share the per-client rate limit
+    rev, _ = signed_in()
+    assert [u["name"] for u in rev.get("/api/users", params={"role": "inspector"}).json()] == ["Inspector 1",
+                                                                                                "Inspector 2"]
+    for email, _ in auth.INSPECTORS:
+        r = TestClient(rev.app).post("/api/auth/login", json={"email": email, "password": ""})
+        assert r.status_code == 401
+    auth._attempts.clear()  # these deliberate failures must not rate-limit the tests after this one
+
+
+def test_reviewer_records_the_outcome_for_a_seeded_inspector(staff):
+    from roadsense.web import auth
+
+    auth.seed_inspectors()
+    with session() as conn:
+        insp1, insp2 = (conn.execute("SELECT id FROM users WHERE email = ?", (e,)).fetchone()[0]
+                        for e, _ in auth.INSPECTORS[:2])
+    rev = staff["rev"]
+    fix, skip = new_report(), new_report()
+    for rid, insp in ((fix, insp1), (skip, insp2)):
+        api.post(f"/reports/{rid}/approve", json={"payload_hash": payload_hash(rid)}, headers=rev)
+        r = api.post(f"/reports/{rid}/assign", json={"inspector_id": insp}, headers=rev).json()
+        assert r["status"] == "inspection_assigned" and "no_repair_needed" in r["allowed_actions"]
+    assigned = api.get("/reports", params={"status": "inspection_assigned"}, headers=rev).json()
+    assert {r["id"] for r in assigned} == {fix, skip}
+
+    api.post(f"/reports/{fix}/inspection", data={"outcome": "repair_needed", "repair_eta": SOON}, headers=rev)
+    api.post(f"/reports/{skip}/inspection", data={"outcome": "no_repair_needed", "notes": "Surface only"},
+             headers=rev)
+    assert [r["id"] for r in api.get("/reports", params={"status": "repair_needed"}, headers=rev).json()] == [fix]
+    closed = api.get("/reports", params={"status": "closed"}, headers=rev).json()
+    assert [(r["id"], r["status_label"], r["inspection_notes"]) for r in closed] == [
+        (skip, "Closed (Repair not needed)", "Surface only")]
+    assert api.post(f"/reports/{fix}/repaired", data={"notes": "patched"}, headers=rev).json()["status"] == "repaired"
+
+
+def test_my_inspections_page_is_gone_and_old_links_open_the_reports_tab():
+    from roadsense.web.app import STATIC
+
+    js, html = (STATIC / "app.js").read_text(encoding="utf-8"), (STATIC / "index.html").read_text(encoding="utf-8")
+    assert "renderInspections" not in js and "My inspections" not in html and 'data-route="inspections"' not in html
+    assert '"#/reports?status=inspection_assigned"' in js

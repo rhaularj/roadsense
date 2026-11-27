@@ -108,8 +108,9 @@ def _unsign(value: str | None) -> dict | None:
 # ---------------- users ----------------
 def bootstrap_admin() -> str | None:
     """Create the first admin when there are no users. Returns where the generated password was written."""
-    with session() as conn:
-        if conn.execute("SELECT 1 FROM users").fetchone():
+    with session() as conn:  # the seeded inspectors cannot sign in, so they do not count as a first user
+        seeded = [email for email, _ in INSPECTORS]
+        if conn.execute(f"SELECT 1 FROM users WHERE email NOT IN ({','.join('?' * len(seeded))})", seeded).fetchone():
             return None
         password = settings.admin_password
         note = None
@@ -130,6 +131,26 @@ def bootstrap_admin() -> str | None:
         log.warning("Created the first admin %s; its password is in %s (change it after signing in)",
                     settings.admin_email, note)
     return note
+
+
+INSPECTORS = (("inspector1@roadsense.local", "Inspector 1"), ("inspector2@roadsense.local", "Inspector 2"),
+              ("inspector3@roadsense.local", "Inspector 3"))
+
+
+def seed_inspectors() -> list[str]:
+    """The road inspectors a reviewer can assign. They have no password, so nobody signs in as them: a reviewer or
+    admin records the inspection outcome. Only missing accounts are created, so a renamed or deactivated one stays
+    as the admin left it. Returns the emails created."""
+    created = []
+    with session() as conn:
+        for email, name in INSPECTORS:
+            if conn.execute("SELECT 1 FROM users WHERE email = ?", (email,)).fetchone():
+                continue
+            conn.execute("INSERT INTO users (email, name, role, password_hash, created_at) VALUES (?, ?, 'inspector',"
+                         " NULL, ?)", (email, name, now()))
+            audit(conn, "system", "user_created", f"user:{email}", {"role": "inspector", "seeded": True})
+            created.append(email)
+    return created
 
 
 def public_user(u: dict) -> dict:
